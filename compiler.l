@@ -1,6 +1,10 @@
 %{
 #include <stdio.h>
+#include <stdlib.h>
+#include "y.tab.c"
 %}
+
+%option noyywrap
 
 digit   [0-9]
 letter  [A-Za-z]
@@ -15,8 +19,8 @@ letter  [A-Za-z]
 
 "const"     { return tCONST; }
 "int"       { return tINT; }
-{digit}+    { return tINTEGER;}
-{letter}({letter}|{digit}|_)*         {return tID; }
+{digit}+    { return INTEGER;}
+{letter}({letter}|{digit}|_)*   {return tID; }
 
 "+"         { return tPLUS; }
 "-"         { return tMINUS; }
@@ -30,14 +34,5 @@ letter  [A-Za-z]
 [ \t]+	    {}
 \n          { return tNEWLINE; }
 
-.           { printf("ERROR: unknown symbol '%s'\n", yytext); }
+.           { return tERROR; }
 %%
-
-int main() {
-    yylex();
-    return 0;
-}
-
-int yywrap() {
-    return 1;
-}
