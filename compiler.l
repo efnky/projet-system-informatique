@@ -6,29 +6,29 @@ digit   [0-9]
 letter  [A-Za-z]
 
 %%
-"main"      { printf("MAIN\n"); }
-"printf"    { printf("PRINTF\n"); }
-"{"         { printf("LBRACE\n"); }
-"}"         { printf("RBRACE\n"); }
-"("         { printf("LPAREN\n"); }
-")"         { printf("RPAREN\n"); }
+"main"      { return MAIN; }
+"printf"    { return PRINTF; }
+"{"         { return LBRACE; }
+"}"         { return RBRACE; }
+"("         { return LPAREN; }
+")"         { return RPAREN; }
 
-"const"     { printf("CONST\n"); }
-"int"       { printf("INT\n"); }
-{digit}+    { printf("INTEGER = %s\n", yytext);}
-{letter}({letter}|{digit}|_)*         { printf("ID = %s\n", yytext); }
+"const"     { return CONST; }
+"int"       { return INT; }
+{digit}+    { return INTEGER;}
+{letter}({letter}|{digit}|_)*         {return ID; }
 
-"+"         { printf("PLUS\n"); }
-"-"         { printf("MINUS\n"); }
-"*"         { printf("MUL\n"); }
-"/"         { printf("DIV\n"); }
-"="         { printf("ASSIGN\n"); }
+"+"         { return PLUS; }
+"-"         { return MINUS; }
+"*"         { return MUL; }
+"/"         { return DIV; }
+"="         { return ASSIGN; }
 
-";"         { printf("SEMICOLON\n"); }
-","         { printf("COMMA\n"); }
+";"         { return SEMICOLON; }
+","         { return COMMA; }
 
 [ \t]+	    {}
-\n          { printf("NEWLINE\n"); }
+\n          { return NEWLINE; }
 
 .           { printf("ERROR: unknown symbol '%s'\n", yytext); }
 %%
