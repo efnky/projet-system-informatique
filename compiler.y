@@ -19,7 +19,7 @@ void yyerror(const char *s);
 %type <nb> expr
 
 %%
-program: tMAIN tLBRACE instructions tRBRACE;
+program: tMAIN tLPAREN tRPAREN tLBRACE instructions tRBRACE tNEWLINE;
 
 instructions: instruction 
         | instructions instruction
@@ -37,7 +37,7 @@ declaration: tINT id_list
 id_list: tID    // int x
         | tID tASSIGN expr  // int x = expr
         | id_list tCOMMA tID    // int x,y
-        | id_list tCOMMA tID tASSIGN expr   // int x,y,z=expr
+        | id_list tCOMMA tID tASSIGN expr  // int x,y,z=expr
         ;
 
 const_list: tID tASSIGN expr

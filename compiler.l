@@ -1,7 +1,7 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
-#include "y.tab.c"
+#include "y.tab.h"
 %}
 
 %option noyywrap
@@ -19,8 +19,11 @@ letter  [A-Za-z]
 
 "const"     { return tCONST; }
 "int"       { return tINT; }
-{digit}+    { return INTEGER;}
-{letter}({letter}|{digit}|_)*   {return tID; }
+{digit}+    { yylval.nb = atoi(yytext); return INTEGER;}
+{letter}({letter}|{digit}|_)*   {
+    yylval.str = strdup(yytext);
+    return tID;
+}
 
 "+"         { return tPLUS; }
 "-"         { return tMINUS; }
@@ -32,7 +35,7 @@ letter  [A-Za-z]
 ","         { return tCOMMA; }
 
 [ \t]+	    {}
-\n          { return tNEWLINE; }
+\n          {}
 
 .           { return tERROR; }
 %%
