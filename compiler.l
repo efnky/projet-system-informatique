@@ -6,29 +6,29 @@ digit   [0-9]
 letter  [A-Za-z]
 
 %%
-"main"      { return MAIN; }
-"printf"    { return PRINTF; }
-"{"         { return LBRACE; }
-"}"         { return RBRACE; }
-"("         { return LPAREN; }
-")"         { return RPAREN; }
+"main"      { return tMAIN; }
+"printf"    { return tPRINTF; }
+"{"         { return tLBRACE; }
+"}"         { return tRBRACE; }
+"("         { return tLPAREN; }
+")"         { return tRPAREN; }
 
-"const"     { return CONST; }
-"int"       { return INT; }
-{digit}+    { return INTEGER;}
-{letter}({letter}|{digit}|_)*         {return ID; }
+"const"     { return tCONST; }
+"int"       { return tINT; }
+{digit}+    { return tINTEGER;}
+{letter}({letter}|{digit}|_)*         {return tID; }
 
-"+"         { return PLUS; }
-"-"         { return MINUS; }
-"*"         { return MUL; }
-"/"         { return DIV; }
-"="         { return ASSIGN; }
+"+"         { return tPLUS; }
+"-"         { return tMINUS; }
+"*"         { return tMUL; }
+"/"         { return tDIV; }
+"="         { return tASSIGN; }
 
-";"         { return SEMICOLON; }
-","         { return COMMA; }
+";"         { return tSEMICOLON; }
+","         { return tCOMMA; }
 
 [ \t]+	    {}
-\n          { return NEWLINE; }
+\n          { return tNEWLINE; }
 
 .           { printf("ERROR: unknown symbol '%s'\n", yytext); }
 %%
