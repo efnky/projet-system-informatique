@@ -11,8 +11,13 @@
 #define AFC 6
 #define JMP 7
 #define JMF 8
+#define INF 9
+#define SUP 0xA
+#define EQU 0xB
+#define PRI 0xC
 
 #define MAX_SYMBOLS 100
+#define TEMP_BASE 101
 
 typedef struct {
         char name[50];
@@ -21,13 +26,16 @@ typedef struct {
 } Symbol;
 
 Symbol symbol_table[MAX_SYMBOLS];
+
 int symbol_count = 0;
 int next_free_address = 0;
+int temp_next_address = TEMP_BASE;
 
 FILE *clear;
 FILE *coded;
 
 int add_symbol(const char *name, int isConst) {
+        int addr = next_free_address;
         // Check if the name of the symbol already exists
         for (int i = 0; i < symbol_count; i++) {
                 if (strcmp(symbol_table[i].name, name) == 0) {
@@ -42,16 +50,35 @@ int add_symbol(const char *name, int isConst) {
                 exit(1);
         }
 
+        if (next_free_address >= TEMP_BASE) {
+                printf("Error: no more space in zone 1 for symbols.\n");
+                exit(1);
+        }       
+
         // Add the symbol into table
         strcpy(symbol_table[symbol_count].name, name);
         symbol_table[symbol_count].address = next_free_address;
         symbol_table[symbol_count].isConst = isConst;
 
+        // Change the next available address
         symbol_count++;
         next_free_address++;
 
-        return next_free_address - 1;
+        return addr;
 }
+
+// Create a new available temporary memory address
+int new_temp() {
+    int addr = next_temp_address;
+    next_temp_address++;
+    return addr;
+}
+
+// Reset temporary memory when it is done
+void reset_temp_zone() {
+    temp_next_address = TEMP_BASE;
+}
+
 
 int get_address(const char *name) {
         for (int i = 0; i < symbol_count; i++) {
@@ -91,98 +118,151 @@ void yyerror(const char *s);
 %type <nb> expr
 
 %%
-program: tMAIN tLPAREN tRPAREN tLBRACE instructions tRBRACE tNEWLINE;
+program:
+    tMAIN tLPAREN tRPAREN tLBRACE declarations statements tRBRACE
+;
 
-instructions: instruction 
-        | instructions instruction 
-        ;
+declarations:
+      /* empty */
+    | declarations declaration tSEMICOLON
+;
 
-instruction: declaration tSEMICOLON
-        | assignment tSEMICOLON
-        | print tSEMICOLON
-        ;
+statements:
+      /* empty */
+    | statements statement
+;
+
+statement:
+      assignment tSEMICOLON { reset_temp_zone(); }
+    | print tSEMICOLON { reset_temp_zone(); }
+;
 
 declaration: tINT id_list 
         {
                 printf("declaring an integer.\n");
+                reset_temp_zone();
         }
         | tCONST tINT const_list 
         {
                 printf("declaring a constant integer.\n");
+                reset_temp_zone();
         }
         ;
 
-// int x; | int x = 5;
 id_list: decl_item
         | id_list tCOMMA decl_item
         ;
 
-decl_item: tID // int x;
+decl_item: tID 
         {
                 int addr = add_symbol($1,0);
                 printf("Variable %s declared at address %d\n", $1, addr);
         }
-        | tID tASSIGN expr // int x = 5;
+        | tID tASSIGN expr 
         {
                 int addr = add_symbol($1, 0);
-                fprintf(clear, "AFC %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", AFC, addr, $3);
-                printf("Variable %s declared at address %d with value %d\n", $1, addr, $3);
+                fprintf(clear, "COP %d %d\n", addr, $3);
+                fprintf(coded, "%d %d %d\n", COP, addr, $3);
         }
         ;
 
-// const int x = 5;
-const_list: decl_item_const // const int x, y, z = 4;
+const_list: decl_item_const 
         | const_list tCOMMA decl_item_const
         ;
 
 decl_item_const: tID tASSIGN expr 
         {       
                 int addr = add_symbol($1, 1);
-                fprintf(clear, "AFC %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", AFC, addr, $3);
-                printf("Constant %s declared at address %d with value %d\n", $1, addr, $3);
+                fprintf(clear, "COP %d %d\n", addr, $3);
+                fprintf(coded, "%d %d %d\n", COP, addr, $3);
         }
         ;
 
-assignment: tID tASSIGN INTEGER 
+assignment: tID tASSIGN expr
         { 
                 int addr = get_address($1);
-                fprintf(clear, "AFC %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", AFC, addr, $3);
-                printf("Number %d assignet to %s with the address %d\n", $3, $1, addr);
+
+                if (is_constant($1)) {
+                printf("Error: cannot assign to constant '%s'\n", $1);
+                exit(1);
+                }
+
+                fprintf(clear, "COP %d %d\n", addr, $3);
+                fprintf(coded, "%d %d %d\n", COP, addr, $3);
+                printf("Assigned expression result to %s at address %d\n", $1, addr);
         }
-        | tID tASSIGN tID 
-        {
-                int addr1 = get_address($1);
-                int addr2 = get_address($3);
-                fprintf(clear, "COP %d %d\n", addr1, addr2);
-                fprintf(coded, "%d %d %d\n", COP, addr1, addr2);
-                printf("Variable %s copied to variable %s\n", $3, $1);
-        }
-        | tID tASSIGN expr 
         ;
 
 expr: expr tPLUS expr   
         { 
-                
+                int res = new_temp();
+                fprintf(clear, "ADD %d %d %d\n", res, $1, $3);
+                fprintf(coded, "%d %d %d %d\n", ADD, res, $1, $3);
+                $$ = res;
         }
-        | expr tMINUS expr  { $$ = $1 - $3; }
-        | expr tMUL expr    { $$ = $1 * $3; }
-        | expr tDIV expr    { $$ = $1 / $3; }
-        | tLPAREN expr tRPAREN  { $$ = $2; }
+        | expr tMINUS expr  
+        { 
+                int res = new_temp();
+                fprintf(clear, "SOU %d %d %d\n", res, $1, $3);
+                fprintf(coded, "%d %d %d %d\n", SOU, res, $1, $3);
+                $$ = res;
+        }
+        | expr tMUL expr    
+        { 
+                int res = new_temp();
+                fprintf(clear, "MUL %d %d %d\n", res, $1, $3);
+                fprintf(coded, "%d %d %d %d\n", MUL, res, $1, $3);
+                $$ = res;
+        }
+        | expr tDIV expr    
+        { 
+                int res = new_temp();
+                fprintf(clear, "DIV %d %d %d\n", res, $1, $3);
+                fprintf(coded, "%d %d %d %d\n", DIV, res, $1, $3);
+                $$ = res;
+        }
+        | tLPAREN expr tRPAREN  
+        { 
+                $$ = $2;
+        }
+        | INTEGER
+        {
+                int temp = new_temp();
+                fprintf(clear, "AFC %d %d\n", temp, $1);
+                fprintf(coded, "%d %d %d\n", AFC, temp, $1);
+                $$ = temp;
+        }
+        | tID
+        {
+                $$ = get_address($1);
+        }
         ;
 
-print: tPRINTF tLPAREN tID tRPAREN
-        | tPRINTF tLPAREN INTEGER tRPAREN;
+print: tPRINTF tLPAREN expr tRPAREN 
+        {
+                fprintf(clear, "PRI %d\n", $3);
+                fprintf(coded, "%d %d\n", PRI, $3);
+        }
+        ;
 
 %%
 void yyerror(const char *s) {
-    fprintf(stderr, "%s\n", s);
+        fprintf(stderr, "%s\n", s);
 }
 
 int main(void) {
-    yyparse();
-    return 0;
+        clear = fopen("clear.asm", "w");
+        coded = fopen("coded.asm", "w");
+
+        if (!clear || !coded) {
+                perror("fopen");
+                return 1;
+        }
+
+        yyparse();
+
+        fclose(clear);
+        fclose(coded);
+        return 0;
 }
 
