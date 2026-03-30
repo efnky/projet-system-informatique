@@ -15,6 +15,7 @@
 #define SUP 0xA
 #define EQU 0xB
 #define PRI 0xC
+#define NEQ 0xD
 
 #define MAX_SYMBOLS 100
 #define TEMP_BASE 101
@@ -30,6 +31,48 @@ Symbol symbol_table[MAX_SYMBOLS];
 int symbol_count = 0;
 int next_free_address = 0;
 int temp_next_address = TEMP_BASE;
+
+// instruction buffer new
+
+#define MAX_INSTR 10000
+
+typedef struct {
+    char clear[256];   /* human-readable  e.g.  "JMF 101 7"  */
+    char coded[256];   /* numeric         e.g.  "8 101 7"     */
+} Instr;
+
+Instr program[MAX_INSTR];
+int   instr_count = 0;
+
+
+// while loop: new
+
+#define MAX_NESTING 32
+
+typedef struct {
+    int loop_start;   /* instruction index where condition begins     */
+    int jmf_index;    /* instruction index of the JMF (backpatched)   */
+    int cond_addr;    /* memory address of the boolean result         */
+} WhileCtx;
+
+WhileCtx while_stack[MAX_NESTING];
+int      while_sp = 0;
+
+
+//if conditon :  new
+
+typedef struct {
+    int jmf_index;    /* index of JMF at end of condition             */
+    int jmp_index;    /* index of JMP at end of if-body (for else)    */
+    int cond_addr;    /* memory address of the boolean result         */
+    int has_else;     /* 1 if an else branch is present               */
+} IfCtx;
+
+IfCtx if_stack[MAX_NESTING];
+int   if_sp = 0;
+
+FILE *clear_file;
+FILE *coded_file;
 
 FILE *clear;
 FILE *coded;
@@ -107,8 +150,10 @@ void yyerror(const char *s);
 %union { int nb; char *str; }
 %token tMAIN tPRINTF tLBRACE tRBRACE tLPAREN tRPAREN 
 %token tCONST tINT 
+%token tIF tELSE tWHILE  
 %token tPLUS tMINUS tMUL tDIV tASSIGN 
 %token tSEMICOLON tCOMMA tNEWLINE tERROR
+%token tLT tGT tEQEQ tNEQ
 %token <nb> INTEGER
 %token <str> tID
 

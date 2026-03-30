@@ -19,6 +19,11 @@ letter  [A-Za-z]
 
 "const"     { return tCONST; }
 "int"       { return tINT; }
+
+"if"        { return tIF; }
+"else"      { return tELSE; }
+"while"     { return tWHILE; }
+
 {digit}+    { yylval.nb = atoi(yytext); return INTEGER;}
 {letter}({letter}|{digit}|_)*   {
     yylval.str = strdup(yytext);
@@ -30,6 +35,12 @@ letter  [A-Za-z]
 "*"         { return tMUL; }
 "/"         { return tDIV; }
 "="         { return tASSIGN; }
+
+"<"         { return tLT; }
+">"         { return tGT; }
+"=="        { return tEQEQ; }
+"!="        { return tNEQ; }
+
 
 ";"         { return tSEMICOLON; }
 ","         { return tCOMMA; }
