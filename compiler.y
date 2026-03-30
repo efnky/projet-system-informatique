@@ -69,8 +69,8 @@ int add_symbol(const char *name, int isConst) {
 
 // Create a new available temporary memory address
 int new_temp() {
-    int addr = next_temp_address;
-    next_temp_address++;
+    int addr = temp_next_address;
+    temp_next_address++;
     return addr;
 }
 
@@ -242,6 +242,7 @@ print: tPRINTF tLPAREN expr tRPAREN
         {
                 fprintf(clear, "PRI %d\n", $3);
                 fprintf(coded, "%d %d\n", PRI, $3);
+                printf("Generated PRI for address %d\n", $3);
         }
         ;
 
@@ -260,6 +261,7 @@ int main(void) {
         }
 
         yyparse();
+        printf("Parsing finished\n");
 
         fclose(clear);
         fclose(coded);
