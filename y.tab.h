@@ -39,57 +39,23 @@
    /* Put the tokens into the symbol table, so that GDB and other debuggers
       know about them.  */
    enum yytokentype {
-     tMAIN = 258,
-     tPRINTF = 259,
-     tLBRACE = 260,
-     tRBRACE = 261,
-     tLPAREN = 262,
-     tRPAREN = 263,
-     tCONST = 264,
-     tINT = 265,
-     tPLUS = 266,
-     tMINUS = 267,
-     tMUL = 268,
-     tDIV = 269,
-     tASSIGN = 270,
-     tSEMICOLON = 271,
-     tCOMMA = 272,
-     tNEWLINE = 273,
-     tERROR = 274,
-     INTEGER = 275,
-     tID = 276
+     INTEGER = 258,
+     NEWLINE = 259
    };
 #endif
 /* Tokens.  */
-#define tMAIN 258
-#define tPRINTF 259
-#define tLBRACE 260
-#define tRBRACE 261
-#define tLPAREN 262
-#define tRPAREN 263
-#define tCONST 264
-#define tINT 265
-#define tPLUS 266
-#define tMINUS 267
-#define tMUL 268
-#define tDIV 269
-#define tASSIGN 270
-#define tSEMICOLON 271
-#define tCOMMA 272
-#define tNEWLINE 273
-#define tERROR 274
-#define INTEGER 275
-#define tID 276
+#define INTEGER 258
+#define NEWLINE 259
 
 
 
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 8 "compiler.y"
-{ int nb; char *str; }
+#line 25 "interpreter.y"
+{ int nb; }
 /* Line 1529 of yacc.c.  */
-#line 93 "y.tab.h"
+#line 59 "y.tab.h"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
