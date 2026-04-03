@@ -219,14 +219,14 @@ decl_item_const: tID tASSIGN expr
 STATEMENTS
 */
 statements:
-    | statements statement
+        | statements statement
 ;
 
 statement:
-      assignment tSEMICOLON { reset_temp_zone(); }
-    | print tSEMICOLON { reset_temp_zone(); }
-    //| tWHILE tLPAREN comparison tRPAREN tLBRACE declarations statements tRBRACE { reset_temp_zone(); }
-;
+        assignment tSEMICOLON { reset_temp_zone(); }
+        | print tSEMICOLON { reset_temp_zone(); }
+        | while 
+        ;
 
 /*
 ASSIGNMENTS
@@ -334,7 +334,19 @@ expr: expr tPLUS expr
         {
                 $$ = get_address($1);
         }
-        ;   
+        ;  
+
+/*
+WHILE CONDITION
+*/ 
+while: tWHILE tLPAREN expr tRPAREN inside_while { reset_temp_zone(); }
+        ;
+
+inside_while: tLBRACE declarations statements tRBRACE 
+        {
+
+        }
+        ;
 
 /*
 PRINT
