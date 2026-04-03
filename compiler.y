@@ -43,9 +43,7 @@ typedef struct {
 Instr program[MAX_INSTR];
 int   instr_count = 0;
 
-
 // while loop: new
-
 #define MAX_NESTING 32
 
 typedef struct {
@@ -57,18 +55,6 @@ typedef struct {
 WhileCtx while_stack[MAX_NESTING];
 int      while_sp = 0;
 
-
-//if conditon :  new
-
-typedef struct {
-    int jmf_index;    /* index of JMF at end of condition             */
-    int jmp_index;    /* index of JMP at end of if-body (for else)    */
-    int cond_addr;    /* memory address of the boolean result         */
-    int has_else;     /* 1 if an else branch is present               */
-} IfCtx;
-
-IfCtx if_stack[MAX_NESTING];
-int   if_sp = 0;
 
 FILE *clear;
 FILE *coded;
@@ -139,6 +125,23 @@ int is_constant(const char *name) {
         exit(1);
 }
 
+int add_instruction(const char *instClear, const char *instCoded) {
+        if (instr_count >= MAX_INSTR) {
+                printf("Error: program too large.\n");
+                exit(1);
+        }
+        strcpy(program[instr_count].clear, instClear);
+        strcpy(program[instr_count].coded, instCoded);
+        return instr_count++;
+}
+
+void flush_program() {
+        for (int i = 0; i < instr_count; i++) {
+                fprintf(clear, "%s\n", program[i].clear);
+                fprintf(coded, "%s\n", program[i].coded);
+        }
+}
+
 int yylex(void);
 void yyerror(const char *s);
 %}
@@ -198,8 +201,10 @@ decl_item: tID
         | tID tASSIGN expr 
         {
                 int addr = add_symbol($1, 0);
-                fprintf(clear, "COP %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", COP, addr, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "COP %d %d", addr, $3);
+                snprintf(bd, 256, "%d %d %d", COP, addr, $3);
+                add_instruction(bc, bd);
         }
         ;
 
@@ -210,8 +215,10 @@ const_list: decl_item_const
 decl_item_const: tID tASSIGN expr 
         {       
                 int addr = add_symbol($1, 1);
-                fprintf(clear, "COP %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", COP, addr, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "COP %d %d", addr, $3);
+                snprintf(bd, 256, "%d %d %d", COP, addr, $3);
+                add_instruction(bc, bd);
         }
         ;
 
@@ -240,8 +247,10 @@ assignment: tID tASSIGN expr
                 exit(1);
                 }
 
-                fprintf(clear, "COP %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", COP, addr, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "COP %d %d", addr, $3);
+                snprintf(bd, 256, "%d %d %d", COP, addr, $3);
+                add_instruction(bc, bd);
                 printf("Assigned expression result to %s at address %d\n", $1, addr);
         }
         ;
@@ -252,29 +261,37 @@ EXPRESSIONS
 expr: expr tPLUS expr   
         { 
                 int res = new_temp();
-                fprintf(clear, "ADD %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", ADD, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "ADD %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", ADD, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
         }
         | expr tMINUS expr  
         { 
                 int res = new_temp();
-                fprintf(clear, "SOU %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", SOU, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "SOU %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", SOU, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
         }
         | expr tMUL expr    
         { 
                 int res = new_temp();
-                fprintf(clear, "MUL %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", MUL, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "MUL %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", MUL, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
         }
         | expr tDIV expr    
         { 
                 int res = new_temp();
-                fprintf(clear, "DIV %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", DIV, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "DIV %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", DIV, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
         }
         | tLPAREN expr tRPAREN  
@@ -284,24 +301,30 @@ expr: expr tPLUS expr
         | expr tLT expr
         {
                 int res = new_temp();
-                fprintf(clear, "INF %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", INF, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "INF %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", INF, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
                 printf("Compared values with less than.\n");
         }
         | expr tGT expr
         {
                 int res = new_temp();
-                fprintf(clear, "SUP %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", SUP, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "SUP %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", SUP, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
                 printf("Compared values with greater than.\n");
         }
         | expr tEQEQ expr
         {
                 int res = new_temp();
-                fprintf(clear, "EQU %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", EQU, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "EQU %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", EQU, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
                 printf("Compared values with equal to.\n");
         }
@@ -310,15 +333,19 @@ expr: expr tPLUS expr
                 int res = new_temp();
                 int tmp1 = new_temp();
                 int tmp2 = new_temp();
+                char bc[256], bd[256];
 
-                fprintf(clear, "AFC %d %d\n", tmp1, 1);
-                fprintf(coded, "%d %d %d\n", AFC, tmp1, 1);
+                snprintf(bc, 256, "AFC %d 1", tmp1);
+                snprintf(bd, 256, "%d %d 1", AFC, tmp1);
+                add_instruction(bc, bd);
 
-                fprintf(clear, "EQU %d %d %d\n", tmp2, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", EQU, tmp2, $1, $3);
+                snprintf(bc, 256, "EQU %d %d %d", tmp2, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", EQU, tmp2, $1, $3);
+                add_instruction(bc, bd);
 
-                fprintf(clear, "SOU %d %d %d\n", res, tmp1, tmp2);
-                fprintf(coded, "%d %d %d %d\n", SOU, res, tmp1, tmp2);
+                snprintf(bc, 256, "SOU %d %d %d", res, tmp1, tmp2);
+                snprintf(bd, 256, "%d %d %d %d", SOU, res, tmp1, tmp2);
+                add_instruction(bc, bd);
 
                 $$ = res;
                 printf("Compared values with not equal.\n");
@@ -326,8 +353,10 @@ expr: expr tPLUS expr
         | INTEGER 
         {
                 int temp = new_temp();
-                fprintf(clear, "AFC %d %d\n", temp, $1);
-                fprintf(coded, "%d %d %d\n", AFC, temp, $1);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "AFC %d %d", temp, $1);
+                snprintf(bd, 256, "%d %d %d", AFC, temp, $1);
+                add_instruction(bc, bd);
                 $$ = temp;
         }
         | tID
@@ -353,8 +382,10 @@ PRINT
 */
 print: tPRINTF tLPAREN expr tRPAREN 
         {
-                fprintf(clear, "PRI %d\n", $3);
-                fprintf(coded, "%d %d\n", PRI, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "PRI %d", $3);
+                snprintf(bd, 256, "%d %d", PRI, $3);
+                add_instruction(bc, bd);
                 printf("Generated PRI for address %d\n", $3);
         }
         ;
@@ -375,6 +406,8 @@ int main(void) {
 
         yyparse();
         printf("Parsing finished\n");
+
+        flush_program();
 
         fclose(clear);
         fclose(coded);
