@@ -730,31 +730,33 @@ do_action:	/* This label is used only to access EOF actions. */
 case 1:
 YY_RULE_SETUP
 #line 11 "interpreter.l"
-{yylval.nb = (int)strtol(yytext, NULL, 16);
-                return INTEGER;}
+{
+    yylval.nb = atoi(yytext);
+    return INTEGER;
+}
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 13 "interpreter.l"
+#line 15 "interpreter.l"
 ;
 	YY_BREAK
 case 3:
 /* rule 3 can match eol */
 YY_RULE_SETUP
-#line 14 "interpreter.l"
+#line 16 "interpreter.l"
 {return NEWLINE;}
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 15 "interpreter.l"
+#line 17 "interpreter.l"
 ;
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 17 "interpreter.l"
+#line 19 "interpreter.l"
 ECHO;
 	YY_BREAK
-#line 757 "lex.yy.c"
+#line 759 "lex.yy.c"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 
@@ -1759,5 +1761,5 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 17 "interpreter.l"
+#line 19 "interpreter.l"
 

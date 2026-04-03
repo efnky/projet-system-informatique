@@ -96,7 +96,7 @@
 #define EQU 0xB
 #define PRI 0xC
 
-extern FILE *yyin;
+FILE* yyin;
 
 int mem[1000] = {0};
 int yylex(void);

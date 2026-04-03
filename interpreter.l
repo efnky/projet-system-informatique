@@ -8,8 +8,10 @@
 
 %%
 
-[0-9A-Z]+ {yylval.nb = (int)strtol(yytext, NULL, 16);
-                return INTEGER;}
+[0-9A-Z]+ {
+    yylval.nb = atoi(yytext);
+    return INTEGER;
+}
 [ \t]+ ;
 \n {return NEWLINE;}
 .   ;
