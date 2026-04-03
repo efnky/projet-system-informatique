@@ -268,10 +268,15 @@ void yyerror(const char *s);
 %token <nb> INTEGER
 %token <str> tID
 
+%left tLT tGT tEQEQ tNEQ 
 %left tPLUS tMINUS
 %left tMUL tDIV
 
 %type <nb> expr
+
+
+//GRAMMMMAAAAARR commence ici:
+
 
 %%
 program:
