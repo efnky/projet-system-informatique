@@ -59,7 +59,7 @@ WhileCtx while_stack[MAX_NESTING];
 int      while_sp = 0;
 
 
-//if conditon :  new
+//if conditon  new
 
 typedef struct {
     int jmf_index;    /* index of JMF at end of condition             */
@@ -111,10 +111,8 @@ int add_symbol(const char *name, int isConst) {
 }
 
 // Create a new available temporary memory address
-int new_temp() {
-    int addr = temp_next_address;
-    temp_next_address++;
-    return addr;
+int new_temp(void) {
+    return temp_next_address++;
 }
 
 // Reset temporary memory when it is done
@@ -141,6 +139,119 @@ int is_constant(const char *name) {
         }
         printf("Error: symbol '%s' not found.\n", name);
         exit(1);
+}
+
+static int emit(const char *c1, const char *co){
+        if (instr_count >= MAX_INSTR){ fprintf(stderr,"programme est tres grand.\n");exit(1);}
+        strncpy(program[instr_count].clear, cl, 255);
+        strncpy(program[instr_count].coded, co, 255);
+        return instr_count++
+
+}
+
+static void backpatch(int idx, int cond_addr, int target) {
+    char cl[128], co[128];
+    sprintf(cl, "JMF %d %d",      cond_addr, target);
+    sprintf(co, "%d %d %d", JMF,  cond_addr, target);
+    strncpy(program[idx].clear, cl, 255);
+    strncpy(program[idx].coded, co, 255);
+}
+
+static int emit_afc(int dst, int val) {
+    char cl[128], co[128];
+    sprintf(cl, "AFC %d %d",      dst, val);
+    sprintf(co, "%d %d %d", AFC,  dst, val);
+    return emit(cl, co);
+}
+
+static int emit_afc(int dst, int val) {
+    char cl[128], co[128];
+    sprintf(cl, "AFC %d %d",      dst, val);
+    sprintf(co, "%d %d %d", AFC,  dst, val);
+    return emit(cl, co);
+}
+static int emit_cop(int dst, int src) {
+    char cl[128], co[128];
+    sprintf(cl, "COP %d %d",      dst, src);
+    sprintf(co, "%d %d %d", COP,  dst, src);
+    return emit(cl, co);
+}
+static int emit_add(int r, int a, int b) {
+    char cl[128], co[128];
+    sprintf(cl, "ADD %d %d %d",       r, a, b);
+    sprintf(co, "%d %d %d %d", ADD,   r, a, b);
+    return emit(cl, co);
+}
+static int emit_sou(int r, int a, int b) {
+    char cl[128], co[128];
+    sprintf(cl, "SOU %d %d %d",       r, a, b);
+    sprintf(co, "%d %d %d %d", SOU,   r, a, b);
+    return emit(cl, co);
+}
+static int emit_mul(int r, int a, int b) {
+    char cl[128], co[128];
+    sprintf(cl, "MUL %d %d %d",       r, a, b);
+    sprintf(co, "%d %d %d %d", MUL,   r, a, b);
+    return emit(cl, co);
+}
+static int emit_div(int r, int a, int b) {
+    char cl[128], co[128];
+    sprintf(cl, "DIV %d %d %d",       r, a, b);
+    sprintf(co, "%d %d %d %d", DIV,   r, a, b);
+    return emit(cl, co);
+}
+static int emit_inf(int r, int a, int b) {
+    char cl[128], co[128];
+    sprintf(cl, "INF %d %d %d",       r, a, b);
+    sprintf(co, "%d %d %d %d", INF,   r, a, b);
+    return emit(cl, co);
+}
+static int emit_sup(int r, int a, int b) {
+    char cl[128], co[128];
+    sprintf(cl, "SUP %d %d %d",       r, a, b);
+    sprintf(co, "%d %d %d %d", SUP,   r, a, b);
+    return emit(cl, co);
+}
+static int emit_equ(int r, int a, int b) {
+    char cl[128], co[128];
+    sprintf(cl, "EQU %d %d %d",       r, a, b);
+    sprintf(co, "%d %d %d %d", EQU,   r, a, b);
+    return emit(cl, co);
+}
+
+static int emit_neq(int a, int b) {
+    int eq  = new_temp();
+    int inv = new_temp();
+    int one = new_temp();
+    emit_equ(eq, a, b);
+    emit_afc(one, 1);
+    /* inv = 1 - eq */
+    char cl[128], co[128];
+    sprintf(cl, "SOU %d %d %d",       inv, one, eq);
+    sprintf(co, "%d %d %d %d", SOU,   inv, one, eq);
+    emit(cl, co);
+    return inv;
+}
+static int emit_pri(int src) {
+    char cl[128], co[128];
+    sprintf(cl, "PRI %d",      src);
+    sprintf(co, "%d %d", PRI,  src);
+    return emit(cl, co);
+}
+static int emit_jmp(int target) {
+    char cl[128], co[128];
+    sprintf(cl, "JMP %d",      target);
+    sprintf(co, "%d %d", JMP,  target);
+    return emit(cl, co);
+}
+static int emit_jmf_placeholder(int cond_addr) {
+    char cl[128], co[128];
+    sprintf(cl, "JMF %d -1",      cond_addr);
+    sprintf(co, "%d %d -1", JMF,  cond_addr);
+    return emit(cl, co);
+}
+static int emit_jmp_placeholder(void) {
+    return emit("JMP -1", "-1 -1");   /* target filled in by backpatch_jmp */
 }
 
 int yylex(void);
