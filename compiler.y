@@ -15,7 +15,6 @@
 #define SUP 0xA
 #define EQU 0xB
 #define PRI 0xC
-#define NEQ 0xD
 
 #define MAX_SYMBOLS 100
 #define TEMP_BASE 101
@@ -70,9 +69,6 @@ typedef struct {
 
 IfCtx if_stack[MAX_NESTING];
 int   if_sp = 0;
-
-FILE *clear_file;
-FILE *coded_file;
 
 FILE *clear;
 FILE *coded;
@@ -157,29 +153,25 @@ void yyerror(const char *s);
 %token <nb> INTEGER
 %token <str> tID
 
+%left tLT tGT tEQEQ tNEQ
 %left tPLUS tMINUS
 %left tMUL tDIV
 
 %type <nb> expr
 
 %%
+/*
+PROGRAM
+*/
 program:
     tMAIN tLPAREN tRPAREN tLBRACE declarations statements tRBRACE
 ;
 
+/*
+DECLARATION
+*/
 declarations:
-      /* empty */
     | declarations declaration tSEMICOLON
-;
-
-statements:
-      /* empty */
-    | statements statement
-;
-
-statement:
-      assignment tSEMICOLON { reset_temp_zone(); }
-    | print tSEMICOLON { reset_temp_zone(); }
 ;
 
 declaration: tINT id_list 
@@ -223,6 +215,22 @@ decl_item_const: tID tASSIGN expr
         }
         ;
 
+/*
+STATEMENTS
+*/
+statements:
+    | statements statement
+;
+
+statement:
+      assignment tSEMICOLON { reset_temp_zone(); }
+    | print tSEMICOLON { reset_temp_zone(); }
+    //| tWHILE tLPAREN comparison tRPAREN tLBRACE declarations statements tRBRACE { reset_temp_zone(); }
+;
+
+/*
+ASSIGNMENTS
+*/
 assignment: tID tASSIGN expr
         { 
                 int addr = get_address($1);
@@ -238,6 +246,9 @@ assignment: tID tASSIGN expr
         }
         ;
 
+/*
+EXPRESSIONS
+*/
 expr: expr tPLUS expr   
         { 
                 int res = new_temp();
@@ -270,7 +281,49 @@ expr: expr tPLUS expr
         { 
                 $$ = $2;
         }
-        | INTEGER
+        | expr tLT expr
+        {
+                int res = new_temp();
+                fprintf(clear, "INF %d %d %d\n", res, $1, $3);
+                fprintf(coded, "%d %d %d %d\n", INF, res, $1, $3);
+                $$ = res;
+                printf("Compared values with less than.\n");
+        }
+        | expr tGT expr
+        {
+                int res = new_temp();
+                fprintf(clear, "SUP %d %d %d\n", res, $1, $3);
+                fprintf(coded, "%d %d %d %d\n", SUP, res, $1, $3);
+                $$ = res;
+                printf("Compared values with greater than.\n");
+        }
+        | expr tEQEQ expr
+        {
+                int res = new_temp();
+                fprintf(clear, "EQU %d %d %d\n", res, $1, $3);
+                fprintf(coded, "%d %d %d %d\n", EQU, res, $1, $3);
+                $$ = res;
+                printf("Compared values with equal to.\n");
+        }
+        | expr tNEQ expr
+        {
+                int res = new_temp();
+                int tmp1 = new_temp();
+                int tmp2 = new_temp();
+
+                fprintf(clear, "AFC %d %d\n", tmp1, 1);
+                fprintf(coded, "%d %d %d\n", AFC, tmp1, 1);
+
+                fprintf(clear, "EQU %d %d %d\n", tmp2, $1, $3);
+                fprintf(coded, "%d %d %d %d\n", EQU, tmp2, $1, $3);
+
+                fprintf(clear, "SOU %d %d %d\n", res, tmp1, tmp2);
+                fprintf(coded, "%d %d %d %d\n", SOU, res, tmp1, tmp2);
+
+                $$ = res;
+                printf("Compared values with not equal.\n");
+        }
+        | INTEGER 
         {
                 int temp = new_temp();
                 fprintf(clear, "AFC %d %d\n", temp, $1);
@@ -281,8 +334,11 @@ expr: expr tPLUS expr
         {
                 $$ = get_address($1);
         }
-        ;
+        ;   
 
+/*
+PRINT
+*/
 print: tPRINTF tLPAREN expr tRPAREN 
         {
                 fprintf(clear, "PRI %d\n", $3);

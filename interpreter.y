@@ -46,10 +46,13 @@ program_line: INTEGER INTEGER INTEGER INTEGER
             case MUL: mem[a] = mem[b] * mem[c]; break;
             case SOU: mem[a] = mem[b] - mem[c]; break;
             case DIV: if (mem[c] == 0) {
-                printf("Error: division by zero\n");
-                exit(1);
-            }
-            mem[a] = mem[b] / mem[c]; break;
+                    printf("Error: division by zero\n");
+                    exit(1);
+                }
+                mem[a] = mem[b] / mem[c]; break;
+            case INF: mem[a] = mem[b] < mem[c]; break;
+            case SUP: mem[a] = mem[b] > mem[c]; break;
+            case EQU: mem[a] = mem[b] == mem[c]; break;
             default: printf("Error: cannot find the operator\n");
                     exit(1);
         }
