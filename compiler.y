@@ -19,32 +19,20 @@
 #define MAX_SYMBOLS 100
 #define TEMP_BASE 101
 
+#define MAX_INSTR 10000
+
+#define MAX_NESTING 32
+
 typedef struct {
         char name[50];
         int address;
         int isConst;
 } Symbol;
 
-Symbol symbol_table[MAX_SYMBOLS];
-
-int symbol_count = 0;
-int next_free_address = 0;
-int temp_next_address = TEMP_BASE;
-
-// instruction buffer new
-
-#define MAX_INSTR 10000
-
 typedef struct {
     char clear[256];   /* human-readable  e.g.  "JMF 101 7"  */
     char coded[256];   /* numeric         e.g.  "8 101 7"     */
 } Instr;
-
-Instr program[MAX_INSTR];
-int   instr_count = 0;
-
-// while loop: new
-#define MAX_NESTING 32
 
 typedef struct {
     int loop_start;   /* instruction index where condition begins     */
@@ -52,9 +40,16 @@ typedef struct {
     int cond_addr;    /* memory address of the boolean result         */
 } WhileCtx;
 
+int symbol_count = 0;
+int next_free_address = 0;
+int temp_next_address = TEMP_BASE;
+Symbol symbol_table[MAX_SYMBOLS];
+
+Instr program[MAX_INSTR];
+int   instr_count = 0;
+
 WhileCtx while_stack[MAX_NESTING];
 int      while_sp = 0;
-
 
 FILE *clear;
 FILE *coded;
@@ -125,6 +120,7 @@ int is_constant(const char *name) {
         exit(1);
 }
 
+// Adding instructions to the instructions array
 int add_instruction(const char *instClear, const char *instCoded) {
         if (instr_count >= MAX_INSTR) {
                 printf("Error: program too large.\n");
@@ -135,6 +131,7 @@ int add_instruction(const char *instClear, const char *instCoded) {
         return instr_count++;
 }
 
+// Printing the instructions from the instructions array to the files
 void flush_program() {
         for (int i = 0; i < instr_count; i++) {
                 fprintf(clear, "%s\n", program[i].clear);
@@ -232,7 +229,7 @@ statements:
 statement:
         assignment tSEMICOLON { reset_temp_zone(); }
         | print tSEMICOLON { reset_temp_zone(); }
-        | while 
+        | while { reset_temp_zone(); }
         ;
 
 /*
@@ -255,9 +252,9 @@ assignment: tID tASSIGN expr
         }
         ;
 
-/*
-EXPRESSIONS
-*/
+// ====================================
+//             EXPRESSIONS
+// ====================================
 expr: expr tPLUS expr   
         { 
                 int res = new_temp();
@@ -365,15 +362,42 @@ expr: expr tPLUS expr
         }
         ;  
 
-/*
-WHILE CONDITION
-*/ 
-while: tWHILE tLPAREN expr tRPAREN inside_while { reset_temp_zone(); }
+// ====================================
+//      WHILE CONDITION
+// ====================================
+while: tWHILE while_start tLPAREN expr tRPAREN while_cond tLBRACE statements tRBRACE 
+        {
+                // Put a JMP instruction at the end to jump back to the beginning of while
+                WhileCtx ctx = while_stack[--while_sp];
+                char bc[256], bd[256];
+                snprintf(bc, 256, "JMP %d", ctx.loop_start);
+                snprintf(bd, 256, "%d %d", JMP, ctx.loop_start);
+                add_instruction(bc, bd);
+                
+                // Replace the ??? with the next instruction after while condition
+                snprintf(program[ctx.jmf_index].clear, 256, "JMF %d %d", ctx.cond_addr, instr_count);
+                snprintf(program[ctx.jmf_index].coded, 256, "%d %d %d", JMF, ctx.cond_addr, instr_count);
+        }
         ;
 
-inside_while: tLBRACE declarations statements tRBRACE 
+while_start: 
         {
+                while_stack[while_sp].loop_start = instr_count;
+        }
+        ;
 
+while_cond:
+        {
+                int cond_addr = $<nb>-1;
+
+                char bc[256], bd[256];
+                snprintf(bc, 256, "JMF %d ???", cond_addr);
+                snprintf(bd, 256, "%d %d ???", JMF, cond_addr);
+                int idx = add_instruction(bc, bd);
+
+                while_stack[while_sp].jmf_index = idx;
+                while_stack[while_sp].cond_addr = cond_addr;
+                while_sp++;
         }
         ;
 
