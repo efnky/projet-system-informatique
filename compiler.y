@@ -339,7 +339,8 @@ decl_item_const: tID tASSIGN expr
         }
         ;
 
-assignment: tID tASSIGN expr
+//Assignment (unchanged logic, now uses emit_cop)
+/*assignment: tID tASSIGN expr
         { 
                 int addr = get_address($1);
 
@@ -353,7 +354,133 @@ assignment: tID tASSIGN expr
                 printf("Assigned expression result to %s at address %d\n", $1, addr);
         }
         ;
+*/
 
+assignment : tID tASSIGN expr {
+        int addr = get_address($1);
+            if (is_constant($1)) {
+                fprintf(stderr, "Error: cannot assign to constant '%s'\n", $1);
+                exit(1);
+            }
+            emit_cop(addr, $3);
+            printf("Assigned to '%s' at address %d\n", $1, addr);
+
+};
+
+
+
+if_stmt:
+    tIF
+    {
+        if (if_sp >= MAX_NESTING) {
+            fprintf(stderr, "Error: un if etait nested \n");
+            exit(1);
+        }
+        reset_temp_zone();
+    }
+    tLPAREN
+    expr
+    tRPAREN
+    {
+        if_stack[if_sp].cond_addr = $4;
+        if_stack[if_sp].jmf_index = emit_jmf_placeholder($4);
+        if_stack[if_sp].jmp_index = -1;
+        if_stack[if_sp].has_else  = 0;
+        if_sp++;
+        reset_temp_zone();
+    }
+    tLBRACE
+    statements
+    tRBRACE
+    else_part
+    {
+        --if_sp;
+
+        if (if_stack[if_sp].has_else) {
+            backpatch(if_stack[if_sp].jmf_index,
+                      if_stack[if_sp].cond_addr,
+                      if_stack[if_sp].jmp_index + 1);
+            backpatch_jmp(if_stack[if_sp].jmp_index,
+                          instr_count);
+        } else {
+            backpatch(if_stack[if_sp].jmf_index,
+                      if_stack[if_sp].cond_addr,
+                      instr_count);
+        }
+        reset_temp_zone();
+    }
+;
+
+else_part:
+      /* empty */
+    | tELSE
+        {
+            int frame = if_sp - 1;
+            if_stack[frame].jmp_index = emit_jmp_placeholder();
+            if_stack[frame].has_else  = 1;
+            reset_temp_zone();
+        }
+      tLBRACE statements tRBRACE
+;
+
+
+
+
+
+
+while_stmt:
+    tWHILE
+    {
+        if (while_sp >= MAX_NESTING) {
+            fprintf(stderr, "Error: while loops nested too deeply.\n");
+            exit(1);
+        }
+        while_stack[while_sp].loop_start = instr_count;
+        reset_temp_zone();
+    }
+    tLPAREN
+    expr
+    tRPAREN
+    {
+        while_stack[while_sp].cond_addr = $4;
+        while_stack[while_sp].jmf_index = emit_jmf_placeholder($4);
+        while_sp++;
+        reset_temp_zone();
+    }
+    tLBRACE
+    statements
+    tRBRACE
+    {
+        --while_sp;
+        emit_jmp(while_stack[while_sp].loop_start);
+        backpatch(while_stack[while_sp].jmf_index,
+                  while_stack[while_sp].cond_addr,
+                  instr_count);
+        reset_temp_zone();
+    }
+;
+
+
+
+expr:
+      expr tPLUS  expr  { int r = new_temp(); emit_add(r,$1,$3); $$ = r; }
+    | expr tMINUS expr  { int r = new_temp(); emit_sou(r,$1,$3); $$ = r; }
+    | expr tMUL   expr  { int r = new_temp(); emit_mul(r,$1,$3); $$ = r; }
+    | expr tDIV   expr  { int r = new_temp(); emit_div(r,$1,$3); $$ = r; }
+    | expr tLT    expr  { int r = new_temp(); emit_inf(r,$1,$3); $$ = r; }
+    | expr tGT    expr  { int r = new_temp(); emit_sup(r,$1,$3); $$ = r; }
+    | expr tEQEQ  expr  { int r = new_temp(); emit_equ(r,$1,$3); $$ = r; }
+    | expr tNEQ   expr  { $$ = emit_neq($1,$3); }
+    | tLPAREN expr tRPAREN  { $$ = $2; }
+    | INTEGER
+        {
+            int t = new_temp();
+            emit_afc(t, $1);
+            $$ = t;
+        }
+    | tID { $$ = get_address($1); }
+;
+/*
 expr: expr tPLUS expr   
         { 
                 int res = new_temp();
@@ -398,11 +525,15 @@ expr: expr tPLUS expr
                 $$ = get_address($1);
         }
         ;
+*/
+
+
 
 print: tPRINTF tLPAREN expr tRPAREN 
         {
-                fprintf(clear, "PRI %d\n", $3);
-                fprintf(coded, "%d %d\n", PRI, $3);
+                /*fprintf(clear, "PRI %d\n", $3);
+                fprintf(coded, "%d %d\n", PRI, $3);*/
+                emit_pri($3);
                 printf("Generated PRI for address %d\n", $3);
         }
         ;
@@ -422,8 +553,13 @@ int main(void) {
         }
 
         yyparse();
-        printf("Parsing finished\n");
+        
 
+        for (int i = 0; i < instr_count; i++) {
+        fprintf(clear_file, "%s\n", program[i].clear);
+        fprintf(coded_file, "%s\n", program[i].coded);
+    }
+        printf("Parsing finished\n");
         fclose(clear);
         fclose(coded);
         return 0;
