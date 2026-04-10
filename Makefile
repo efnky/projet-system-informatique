@@ -7,7 +7,7 @@ compiler: compiler.l compiler.y
 	gcc y.tab.c lex.yy.c -o compiler
 
 interpreter: interp.l interp.y
-	$(BISON) -d interp.y
+	$(BISON) -d -y interp.y
 	$(FLEX) interp.l
 	gcc interp.tab.c lex.yy.c -o interp
 
