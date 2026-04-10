@@ -15,10 +15,13 @@
 #define SUP 0xA
 #define EQU 0xB
 #define PRI 0xC
-#define NEQ 0xD
 
 #define MAX_SYMBOLS 100
 #define TEMP_BASE 101
+
+#define MAX_INSTR 10000
+
+#define MAX_NESTING 32
 
 typedef struct {
         char name[50];
@@ -26,28 +29,10 @@ typedef struct {
         int isConst;
 } Symbol;
 
-Symbol symbol_table[MAX_SYMBOLS];
-
-int symbol_count = 0;
-int next_free_address = 0;
-int temp_next_address = TEMP_BASE;
-
-// instruction buffer new
-
-#define MAX_INSTR 10000
-
 typedef struct {
     char clear[256];   /* human-readable  e.g.  "JMF 101 7"  */
     char coded[256];   /* numeric         e.g.  "8 101 7"     */
 } Instr;
-
-Instr program[MAX_INSTR];
-int   instr_count = 0;
-
-
-// while loop: new
-
-#define MAX_NESTING 32
 
 typedef struct {
     int loop_start;   /* instruction index where condition begins     */
@@ -55,24 +40,16 @@ typedef struct {
     int cond_addr;    /* memory address of the boolean result         */
 } WhileCtx;
 
+int symbol_count = 0;
+int next_free_address = 0;
+int temp_next_address = TEMP_BASE;
+Symbol symbol_table[MAX_SYMBOLS];
+
+Instr program[MAX_INSTR];
+int   instr_count = 0;
+
 WhileCtx while_stack[MAX_NESTING];
 int      while_sp = 0;
-
-
-//if conditon :  new
-
-typedef struct {
-    int jmf_index;    /* index of JMF at end of condition             */
-    int jmp_index;    /* index of JMP at end of if-body (for else)    */
-    int cond_addr;    /* memory address of the boolean result         */
-    int has_else;     /* 1 if an else branch is present               */
-} IfCtx;
-
-IfCtx if_stack[MAX_NESTING];
-int   if_sp = 0;
-
-FILE *clear_file;
-FILE *coded_file;
 
 FILE *clear;
 FILE *coded;
@@ -143,6 +120,25 @@ int is_constant(const char *name) {
         exit(1);
 }
 
+// Adding instructions to the instructions array
+int add_instruction(const char *instClear, const char *instCoded) {
+        if (instr_count >= MAX_INSTR) {
+                printf("Error: program too large.\n");
+                exit(1);
+        }
+        strcpy(program[instr_count].clear, instClear);
+        strcpy(program[instr_count].coded, instCoded);
+        return instr_count++;
+}
+
+// Printing the instructions from the instructions array to the files
+void flush_program() {
+        for (int i = 0; i < instr_count; i++) {
+                fprintf(clear, "%s\n", program[i].clear);
+                fprintf(coded, "%s\n", program[i].coded);
+        }
+}
+
 int yylex(void);
 void yyerror(const char *s);
 %}
@@ -157,29 +153,25 @@ void yyerror(const char *s);
 %token <nb> INTEGER
 %token <str> tID
 
+%left tLT tGT tEQEQ tNEQ
 %left tPLUS tMINUS
 %left tMUL tDIV
 
 %type <nb> expr
 
 %%
+/*
+PROGRAM
+*/
 program:
     tMAIN tLPAREN tRPAREN tLBRACE declarations statements tRBRACE
 ;
 
+/*
+DECLARATION
+*/
 declarations:
-      /* empty */
     | declarations declaration tSEMICOLON
-;
-
-statements:
-      /* empty */
-    | statements statement
-;
-
-statement:
-      assignment tSEMICOLON { reset_temp_zone(); }
-    | print tSEMICOLON { reset_temp_zone(); }
 ;
 
 declaration: tINT id_list 
@@ -206,8 +198,10 @@ decl_item: tID
         | tID tASSIGN expr 
         {
                 int addr = add_symbol($1, 0);
-                fprintf(clear, "COP %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", COP, addr, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "COP %d %d", addr, $3);
+                snprintf(bd, 256, "%d %d %d", COP, addr, $3);
+                add_instruction(bc, bd);
         }
         ;
 
@@ -218,11 +212,29 @@ const_list: decl_item_const
 decl_item_const: tID tASSIGN expr 
         {       
                 int addr = add_symbol($1, 1);
-                fprintf(clear, "COP %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", COP, addr, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "COP %d %d", addr, $3);
+                snprintf(bd, 256, "%d %d %d", COP, addr, $3);
+                add_instruction(bc, bd);
         }
         ;
 
+/*
+STATEMENTS
+*/
+statements:
+        | statements statement
+;
+
+statement:
+        assignment tSEMICOLON { reset_temp_zone(); }
+        | print tSEMICOLON { reset_temp_zone(); }
+        | while { reset_temp_zone(); }
+        ;
+
+/*
+ASSIGNMENTS
+*/
 assignment: tID tASSIGN expr
         { 
                 int addr = get_address($1);
@@ -232,61 +244,172 @@ assignment: tID tASSIGN expr
                 exit(1);
                 }
 
-                fprintf(clear, "COP %d %d\n", addr, $3);
-                fprintf(coded, "%d %d %d\n", COP, addr, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "COP %d %d", addr, $3);
+                snprintf(bd, 256, "%d %d %d", COP, addr, $3);
+                add_instruction(bc, bd);
                 printf("Assigned expression result to %s at address %d\n", $1, addr);
         }
         ;
 
+// ====================================
+//             EXPRESSIONS
+// ====================================
 expr: expr tPLUS expr   
         { 
                 int res = new_temp();
-                fprintf(clear, "ADD %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", ADD, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "ADD %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", ADD, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
         }
         | expr tMINUS expr  
         { 
                 int res = new_temp();
-                fprintf(clear, "SOU %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", SOU, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "SOU %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", SOU, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
         }
         | expr tMUL expr    
         { 
                 int res = new_temp();
-                fprintf(clear, "MUL %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", MUL, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "MUL %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", MUL, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
         }
         | expr tDIV expr    
         { 
                 int res = new_temp();
-                fprintf(clear, "DIV %d %d %d\n", res, $1, $3);
-                fprintf(coded, "%d %d %d %d\n", DIV, res, $1, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "DIV %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", DIV, res, $1, $3);
+                add_instruction(bc, bd);
                 $$ = res;
         }
         | tLPAREN expr tRPAREN  
         { 
                 $$ = $2;
         }
-        | INTEGER
+        | expr tLT expr
+        {
+                int res = new_temp();
+                char bc[256], bd[256];
+                snprintf(bc, 256, "INF %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", INF, res, $1, $3);
+                add_instruction(bc, bd);
+                $$ = res;
+                printf("Compared values with less than.\n");
+        }
+        | expr tGT expr
+        {
+                int res = new_temp();
+                char bc[256], bd[256];
+                snprintf(bc, 256, "SUP %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", SUP, res, $1, $3);
+                add_instruction(bc, bd);
+                $$ = res;
+                printf("Compared values with greater than.\n");
+        }
+        | expr tEQEQ expr
+        {
+                int res = new_temp();
+                char bc[256], bd[256];
+                snprintf(bc, 256, "EQU %d %d %d", res, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", EQU, res, $1, $3);
+                add_instruction(bc, bd);
+                $$ = res;
+                printf("Compared values with equal to.\n");
+        }
+        | expr tNEQ expr
+        {
+                int res = new_temp();
+                int tmp1 = new_temp();
+                int tmp2 = new_temp();
+                char bc[256], bd[256];
+
+                snprintf(bc, 256, "AFC %d 1", tmp1);
+                snprintf(bd, 256, "%d %d 1", AFC, tmp1);
+                add_instruction(bc, bd);
+
+                snprintf(bc, 256, "EQU %d %d %d", tmp2, $1, $3);
+                snprintf(bd, 256, "%d %d %d %d", EQU, tmp2, $1, $3);
+                add_instruction(bc, bd);
+
+                snprintf(bc, 256, "SOU %d %d %d", res, tmp1, tmp2);
+                snprintf(bd, 256, "%d %d %d %d", SOU, res, tmp1, tmp2);
+                add_instruction(bc, bd);
+
+                $$ = res;
+                printf("Compared values with not equal.\n");
+        }
+        | INTEGER 
         {
                 int temp = new_temp();
-                fprintf(clear, "AFC %d %d\n", temp, $1);
-                fprintf(coded, "%d %d %d\n", AFC, temp, $1);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "AFC %d %d", temp, $1);
+                snprintf(bd, 256, "%d %d %d", AFC, temp, $1);
+                add_instruction(bc, bd);
                 $$ = temp;
         }
         | tID
         {
                 $$ = get_address($1);
         }
+        ;  
+
+// ====================================
+//      WHILE CONDITION
+// ====================================
+while: tWHILE while_start tLPAREN expr tRPAREN while_cond tLBRACE statements tRBRACE 
+        {
+                // Put a JMP instruction at the end to jump back to the beginning of while
+                WhileCtx ctx = while_stack[--while_sp];
+                char bc[256], bd[256];
+                snprintf(bc, 256, "JMP %d", ctx.loop_start);
+                snprintf(bd, 256, "%d %d", JMP, ctx.loop_start);
+                add_instruction(bc, bd);
+                
+                // Replace the ??? with the next instruction after while condition
+                snprintf(program[ctx.jmf_index].clear, 256, "JMF %d %d", ctx.cond_addr, instr_count);
+                snprintf(program[ctx.jmf_index].coded, 256, "%d %d %d", JMF, ctx.cond_addr, instr_count);
+        }
         ;
 
+while_start: 
+        {
+                while_stack[while_sp].loop_start = instr_count;
+        }
+        ;
+
+while_cond:
+        {
+                int cond_addr = $<nb>-1;
+
+                char bc[256], bd[256];
+                snprintf(bc, 256, "JMF %d ???", cond_addr);
+                snprintf(bd, 256, "%d %d ???", JMF, cond_addr);
+                int idx = add_instruction(bc, bd);
+
+                while_stack[while_sp].jmf_index = idx;
+                while_stack[while_sp].cond_addr = cond_addr;
+                while_sp++;
+        }
+        ;
+
+/*
+PRINT
+*/
 print: tPRINTF tLPAREN expr tRPAREN 
         {
-                fprintf(clear, "PRI %d\n", $3);
-                fprintf(coded, "%d %d\n", PRI, $3);
+                char bc[256], bd[256];
+                snprintf(bc, 256, "PRI %d", $3);
+                snprintf(bd, 256, "%d %d", PRI, $3);
+                add_instruction(bc, bd);
                 printf("Generated PRI for address %d\n", $3);
         }
         ;
@@ -307,6 +430,8 @@ int main(void) {
 
         yyparse();
         printf("Parsing finished\n");
+
+        flush_program();
 
         fclose(clear);
         fclose(coded);
