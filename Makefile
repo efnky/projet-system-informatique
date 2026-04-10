@@ -6,10 +6,10 @@ compiler: compiler.l compiler.y
 	$(FLEX) compiler.l
 	gcc y.tab.c lex.yy.c -o compiler
 
-interpreter: interp.l interp.y
-	$(BISON) -d -y interp.y
-	$(FLEX) interp.l
-	gcc interp.tab.c lex.yy.c -o interp
+interpreter: interpreter.l interpreter.y
+	$(BISON) -d -y interpreter.y
+	$(FLEX) interpreter.l
+	gcc y.tab.c lex.yy.c -o interpreter
 
 clean:
-	rm -f *.tab.c *.tab.h lex.yy.c y.tab.* compiler interp *.asm
+	rm -f *.tab.c *.tab.h lex.yy.c y.tab.* compiler interpreter *.asm
