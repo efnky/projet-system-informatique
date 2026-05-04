@@ -58,6 +58,16 @@ begin
                 res_tmp := std_logic_vector(mul(7 downto 0));
                 overflow_flag <= '1' when mul(15 downto 8) /= "00000000" else '0';
 
+            when "100" => -- OR
+                res_tmp := A or B;
+            when "101" => -- AND
+                res_tmp := A and B;
+            when "110" => -- XOR
+                res_tmp := A xor B;
+            when "111" => -- NOT A
+                res_tmp := not A;
+            when "000" => -- NOT B
+                res_tmp := not B;
             when others => 
                 res_tmp := (others => '0');
         end case;
