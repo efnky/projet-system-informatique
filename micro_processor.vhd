@@ -7,7 +7,7 @@
 -- Project Name:
 -- Target Devices:
 -- Tool Versions:
--- Description: Microprocessor Implementation Part 3: instruction ADD, MUL, SOU, DIV (ALU)
+-- Description:
 --
 -- Dependencies:
 --
@@ -175,7 +175,7 @@ begin
             C_DI <= QB_RB;
            
             -- MUX
-            if OP_LI = x"05" then
+            if (OP_DI = x"01" or OP_DI = x"02" or OP_DI = x"03" or OP_DI = x"04" or OP_LI = x"05") then
                 B_DI <= QA_RB;
             else
                 B_DI <= B_LI;
