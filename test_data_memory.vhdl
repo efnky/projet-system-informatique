@@ -10,11 +10,11 @@ architecture Behavioral of test_data_memory is
     component data_memory
         port(
             addr: in std_logic_vector(7 downto 0);
-            IN: in std_logic_vector(7 downto 0);
+            data_in: in std_logic_vector(7 downto 0);
             RW: in std_logic;
             RST: in std_logic;
             CLK: in std_logic;
-            OUT: out std_logic_vector(7 downto 0)
+            data_out: out std_logic_vector(7 downto 0)
         );
     end component;
 

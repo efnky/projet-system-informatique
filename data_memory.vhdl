@@ -5,11 +5,11 @@ use IEEE.numeric_std.all;
 entity data_memory is
     port(
         addr: in std_logic_vector(7 downto 0);
-        IN: in std_logic_vector(7 downto 0);
+        data_in: in std_logic_vector(7 downto 0);
         RW: in std_logic;
         RST: in std_logic;
         CLK: in std_logic;
-        OUT: out std_logic_vector(7 downto 0)
+        data_out: out std_logic_vector(7 downto 0)
     );
 end data_memory;
 
@@ -22,10 +22,11 @@ begin
         if rising_edge(CLK) then
             if RST = '0' then
                 memory <= (others => (others => '0'));
+                data_out <= (others => '0');
             elsif RW = '0' then
-                memory(to_integer(unsigned(addr))) <= IN;
+                memory(to_integer(unsigned(addr))) <= data_in;
             else
-                OUT <= memory(to_integer(unsigned(addr)));
+                data_out <= memory(to_integer(unsigned(addr)));
             end if;
         end if;
     end process;
