@@ -7,7 +7,7 @@
 -- Project Name:
 -- Target Devices:
 -- Tool Versions:
--- Description: Microprocessor Implementation Part 1: instruction AFC
+-- Description: Microprocessor Implementation Part 2: instruction COP, AFC
 --
 -- Dependencies:
 --
@@ -136,7 +136,13 @@ begin
         if rising_edge(clk) then
             OP_DI <= OP_LI;
             A_DI <= A_LI;
-            B_DI <= B_LI;
+           
+            -- MUX
+            if OP_LI = x"05" then
+                B_DI <= QA_RB;
+            else
+                B_DI <= B_LI;
+            end if;
         end if;
     end process;
    
@@ -160,8 +166,10 @@ begin
         end if;
     end process;
    
+    A_RB <= B_LI(3 downto 0);
+    B_RB <= x"0";
     W_a_RB <= A_Mem(3 downto 0);
-    W_RB <= '1' when OP_Mem = x"06" else '0';
+    W_RB <= '1' when (OP_Mem = x"05" or OP_Mem = x"06") else '0';
     DATA_RB <= B_Mem;
     RST_RB <= RST;
     QA <= '0' & QA_RB;
