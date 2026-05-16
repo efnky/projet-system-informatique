@@ -76,6 +76,18 @@ architecture Behavioral of micro_proc is
             C : out STD_LOGIC
         );
     end component;
+
+    --data memory
+    component data_memory 
+        port(
+        addr: in std_logic_vector(7 downto 0);
+        data_in: in std_logic_vector(7 downto 0);
+        RW: in std_logic;
+        RST: in std_logic;
+        CLK: in std_logic;
+        data_out: out std_logic_vector(7 downto 0)
+    );
+    end component;
    
     -- signals for instruction memory
     signal out_instruction :std_logic_vector(31 downto 0);
@@ -100,7 +112,14 @@ architecture Behavioral of micro_proc is
     signal O_ALU : STD_LOGIC;
     signal Z_ALU : STD_LOGIC;
     signal C_ALU : STD_LOGIC;
-   
+
+    -- signals for data memory
+    signal addr_DM : std_logic_vector(7 downto 0);
+    signal data_in_DM : std_logic_vector(7 downto 0);
+    signal RW_DM : std_logic;
+    signal RST_DM : std_logic;
+    signal data_out_DM : std_logic_vector(7 downto 0);
+       
     -- LI/DI signals
     signal OP_LI : std_logic_vector(7 downto 0):= x"00";
     signal A_LI : std_logic_vector(7 downto 0) := x"00";
@@ -130,16 +149,16 @@ begin
        
     register_bank: bande_registre
         port map (
-                A => A_RB,
-                B => B_RB,
-                W_addr => W_a_RB,
-                DATA => DATA_RB,
-                RST => RST_RB,
-                W => W_RB,
-                CLK => CLK,
-                QA => QA_RB,
-                QB => QB_RB
-                );
+            A => A_RB,
+            B => B_RB,
+            W_addr => W_a_RB,
+            DATA => DATA_RB,
+            RST => RST_RB,
+            W => W_RB,
+            CLK => CLK,
+            QA => QA_RB,
+            QB => QB_RB
+        );
                
     ual: ALU
         port map (
@@ -151,6 +170,16 @@ begin
             O => O_ALU,
             Z => Z_ALU,
             C => C_ALU
+        );
+
+    dm: data_memory
+        port map (
+            addr => addr_DM,
+            data_in => data_in_DM,
+            RW => RW_DM,
+            RST => RST_DM,
+            CLK => CLK,
+            data_out => data_out_DM
         );
 
     OP_LI <= out_instruction(31 downto 24);
@@ -175,7 +204,7 @@ begin
             C_DI <= QB_RB;
            
             -- MUX
-            if (OP_DI = x"01" or OP_DI = x"02" or OP_DI = x"03" or OP_DI = x"04" or OP_LI = x"05") then
+            if (OP_LI = x"01" or OP_LI = x"02" or OP_LI = x"03" or OP_LI = x"04" or OP_LI = x"05") then
                 B_DI <= QA_RB;
             else
                 B_DI <= B_LI;
@@ -203,7 +232,12 @@ begin
         if rising_edge(clk) then
             OP_Mem <= OP_EX;
             A_Mem <= A_EX;
-            B_Mem <= B_EX;
+
+            if (OP_EX = x"07") then
+                B_Mem <= data_out_DM;
+            else
+                B_Mem <= B_EX;
+            end if;
         end if;
     end process;
    
@@ -217,7 +251,8 @@ begin
                         OP_Mem = x"03" or
                         OP_Mem = x"04" or
                         OP_Mem = x"05" or
-                        OP_Mem = x"06"
+                        OP_Mem = x"06" or
+                        OP_Mem = x"07"
                     ) else '0';
     DATA_RB <= B_Mem;
     RST_RB <= RST;
@@ -230,5 +265,12 @@ begin
     -- Microprocessor
     QA <= '0' & QA_RB;
     QB <= '0' & QB_RB;
+
+    -- Data Memory
+    addr_DM <= B_EX;
+    RW_DM <= '1' when (OP_EX = x"07") else '0';
+
+    -- Microprocessor
+    RST_DM <= RST;
 
 end Behavioral;
