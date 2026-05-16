@@ -218,6 +218,7 @@ begin
         if rising_edge(clk) then
             OP_EX <= OP_DI;
             A_EX <= A_DI;
+
             if (OP_DI = x"05" or OP_DI = x"06") then
                 B_EX <= B_DI;
             else
@@ -267,8 +268,9 @@ begin
     QB <= '0' & QB_RB;
 
     -- Data Memory
-    addr_DM <= B_EX;
-    RW_DM <= '1' when (OP_EX = x"07") else '0';
+    addr_DM <= B_EX when (OP_EX = x"07" or OP_EX = x"08") else A_EX;
+    RW_DM <= '0' when (OP_EX = x"08") else '1';
+    data_in_DM <= B_EX;
 
     -- Microprocessor
     RST_DM <= RST;
