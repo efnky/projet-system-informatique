@@ -138,6 +138,12 @@ architecture Behavioral of micro_proc is
     signal A_Mem, B_Mem : std_logic_vector(7 downto 0) := x"00";
     signal OP_Mem : std_logic_vector(7 downto 0):= x"00";
 
+    -- Control Unit signals
+    signal LC_DI  : std_logic;  
+    signal LC_EX  : std_logic;  
+    signal LC_Mem : std_logic;  
+    signal LC_RE  : std_logic;  
+
 begin
    
     inst_mem: instruction_memory
@@ -202,13 +208,7 @@ begin
             OP_DI <= OP_LI;
             A_DI <= A_LI;
             C_DI <= QB_RB;
-           
-            -- MUX
-            if (OP_LI = x"01" or OP_LI = x"02" or OP_LI = x"03" or OP_LI = x"04" or OP_LI = x"05") then
-                B_DI <= QA_RB;
-            else
-                B_DI <= B_LI;
-            end if;
+            B_DI <= B_LI when (LC_DI = '0') else QA_RB;
         end if;
     end process;
    
@@ -218,12 +218,7 @@ begin
         if rising_edge(clk) then
             OP_EX <= OP_DI;
             A_EX <= A_DI;
-
-            if (OP_DI = x"05" or OP_DI = x"06") then
-                B_EX <= B_DI;
-            else
-                B_EX <= S_ALU;
-            end if;
+            B_EX <= S_ALU when (LC_EX = '0') else B_DI;
         end if;
     end process;
    
@@ -233,12 +228,57 @@ begin
         if rising_edge(clk) then
             OP_Mem <= OP_EX;
             A_Mem <= A_EX;
+            B_Mem <= B_EX when (LC_RE = '0') else data_out_DM;
+        end if;
+    end process;
 
-            if (OP_EX = x"07") then
-                B_Mem <= data_out_DM;
-            else
-                B_Mem <= B_EX;
-            end if;
+    -- Control Unit
+    process(OP_LI, OP_DI, OP_EX, OP_Mem)
+    begin
+        -- MUX from register bank to DI/EX
+        if (OP_LI = x"01" or OP_LI = x"02" or OP_LI = x"03"
+            or OP_LI = x"04" or OP_LI = x"05" or OP_LI = x"08") then
+            LC_DI <= '1';
+        else
+            LC_DI <= '0';
+        end if;
+
+        -- MUX from ALU to EX/Mem
+        if (OP_DI = x"05" or OP_DI = x"06"
+            or OP_DI = x"07" or OP_DI = x"08") then
+            LC_EX <= '1';
+        else
+            LC_EX <= '0';
+        end if;
+
+        -- MUX from EX/Mem to Data Memory
+        if (OP_EX = x"07") then
+            LC_Mem <= '1';
+        else
+            LC_Mem <= '0';
+        end if;
+
+        -- MUX from data memory to Mem/RE
+        if (OP_EX = x"07") then
+            LC_RE <= '1';
+        else
+            LC_RE <= '0';
+        end if;
+
+        -- Register bank write enable
+        if (OP_Mem = x"01" or OP_Mem = x"02" or OP_Mem = x"03"
+            or OP_Mem = x"04" or OP_Mem = x"05" or OP_Mem = x"06"
+            or OP_Mem = x"07") then
+            W_RB <= '1';
+        else
+            W_RB <= '0';
+        end if;
+
+        -- Data memory read/write control
+        if (OP_EX = x"08") then
+            RW_DM <= '0';
+        else
+            RW_DM <= '1';
         end if;
     end process;
    
@@ -246,15 +286,6 @@ begin
     A_RB <= B_LI(3 downto 0);
     B_RB <= C_LI(3 downto 0);
     W_a_RB <= A_Mem(3 downto 0);
-    W_RB <= '1' when (
-                        OP_Mem = x"01" or
-                        OP_Mem = x"02" or
-                        OP_Mem = x"03" or
-                        OP_Mem = x"04" or
-                        OP_Mem = x"05" or
-                        OP_Mem = x"06" or
-                        OP_Mem = x"07"
-                    ) else '0';
     DATA_RB <= B_Mem;
     RST_RB <= RST;
    
@@ -268,8 +299,7 @@ begin
     QB <= '0' & QB_RB;
 
     -- Data Memory
-    addr_DM <= B_EX when (OP_EX = x"07" or OP_EX = x"08") else A_EX;
-    RW_DM <= '0' when (OP_EX = x"08") else '1';
+    addr_DM    <= B_EX when (LC_Mem = '1') else A_EX;
     data_in_DM <= B_EX;
 
     -- Microprocessor
