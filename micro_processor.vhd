@@ -81,11 +81,11 @@ architecture Behavioral of micro_proc is
     component data_memory 
         port(
         addr: in std_logic_vector(7 downto 0);
-        data_in: in std_logic_vector(7 downto 0);
+        in1: in std_logic_vector(7 downto 0);
         RW: in std_logic;
         RST: in std_logic;
         CLK: in std_logic;
-        data_out: out std_logic_vector(7 downto 0)
+        out1: out std_logic_vector(7 downto 0)
     );
     end component;
    
@@ -181,11 +181,11 @@ begin
     dm: data_memory
         port map (
             addr => addr_DM,
-            data_in => data_in_DM,
+            in1 => data_in_DM,
             RW => RW_DM,
             RST => RST_DM,
             CLK => CLK,
-            data_out => data_out_DM
+            out1 => data_out_DM
         );
 
     OP_LI <= out_instruction(31 downto 24);
@@ -197,7 +197,11 @@ begin
     process(clk)
     begin
         if rising_edge(clk) then
-            ip <= std_logic_vector(unsigned(ip)+1);
+            if RST = '1' then
+                ip <= x"00";
+            else
+                ip <= std_logic_vector(unsigned(ip)+1);
+            end if;
         end if;
     end process;
    
@@ -205,10 +209,21 @@ begin
     process(clk)
     begin
         if rising_edge(clk) then
-            OP_DI <= OP_LI;
-            A_DI <= A_LI;
-            C_DI <= QB_RB;
-            B_DI <= B_LI when (LC_DI = '0') else QA_RB;
+            if RST = '1' then
+                OP_DI <= x"00";
+                A_DI  <= x"00";
+                B_DI  <= x"00";
+                C_DI  <= x"00";
+            else
+                OP_DI <= OP_LI;
+                A_DI  <= A_LI;
+                C_DI  <= QB_RB;
+                if (LC_DI = '0') then
+                    B_DI <= B_LI;
+                else
+                    B_DI <= QA_RB;
+                end if;
+            end if;
         end if;
     end process;
    
@@ -216,9 +231,19 @@ begin
     process(clk)
     begin
         if rising_edge(clk) then
-            OP_EX <= OP_DI;
-            A_EX <= A_DI;
-            B_EX <= S_ALU when (LC_EX = '0') else B_DI;
+            if RST = '1' then
+                OP_EX <= x"00";
+                A_EX  <= x"00";
+                B_EX  <= x"00";
+            else
+                OP_EX <= OP_DI;
+                A_EX  <= A_DI;
+                if (LC_EX = '0') then
+                    B_EX <= S_ALU;
+                else
+                    B_EX <= B_DI;
+                end if;
+            end if;
         end if;
     end process;
    
@@ -226,9 +251,19 @@ begin
     process(clk)
     begin
         if rising_edge(clk) then
-            OP_Mem <= OP_EX;
-            A_Mem <= A_EX;
-            B_Mem <= B_EX when (LC_RE = '0') else data_out_DM;
+            if RST = '1' then
+                OP_Mem <= x"00";
+                A_Mem  <= x"00";
+                B_Mem  <= x"00";
+            else
+                OP_Mem <= OP_EX;
+                A_Mem  <= A_EX;
+                if (LC_RE = '0') then
+                    B_Mem <= B_EX;
+                else
+                    B_Mem <= data_out_DM;
+                end if;
+            end if;
         end if;
     end process;
 
@@ -287,7 +322,7 @@ begin
     B_RB <= C_LI(3 downto 0);
     W_a_RB <= A_Mem(3 downto 0);
     DATA_RB <= B_Mem;
-    RST_RB <= RST;
+    RST_RB <= not RST;
    
     -- ALU
     A_ALU <= B_DI;
@@ -303,6 +338,6 @@ begin
     data_in_DM <= B_EX;
 
     -- Microprocessor
-    RST_DM <= RST;
+    RST_DM <= not RST;
 
 end Behavioral;
