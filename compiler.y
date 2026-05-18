@@ -51,6 +51,14 @@ typedef struct {
     int cond_addr;
 } WhileCtx;
 
+/* NEW: if/else context */
+typedef struct {
+    int jmf_index;
+    int jmp_index;
+    int cond_addr;
+    int has_else;
+} IfCtx;
+
 typedef struct {
     char name[50];
     int instr_addr;
@@ -70,6 +78,10 @@ int   instr_count = 0;
 WhileCtx while_stack[MAX_NESTING];
 int      while_sp = 0;
 
+/* NEW: if stack */
+IfCtx if_stack[MAX_NESTING];
+int   if_sp = 0;
+
 Function func_table[MAX_FUNCTIONS];
 int func_count = 0;
 
@@ -86,24 +98,34 @@ int arg_sp = 0;
 FILE *clear;
 FILE *coded;
 
+extern int yylineno;
+int nb_errors = 0;
+
+void report_error(const char *msg) {
+        fprintf(stderr, "Semantic error at line %d: %s\n", yylineno, msg);
+        nb_errors++;
+}
+
 int add_symbol(const char *name, int isConst, int isPointer) {
         int addr = next_free_address;
         for (int i = 0; i < symbol_count; i++) {
                 if (strcmp(symbol_table[i].name, name) == 0
                     && symbol_table[i].scope == current_scope) {
-                        printf("Error: symbol '%s' already declared in this scope.\n", name);
-                        exit(1);
+                        char buf[256];
+                        snprintf(buf, 256, "symbol '%s' already declared in this scope", name);
+                        report_error(buf);
+                        return addr;
                 }
         }
 
         if (symbol_count >= MAX_SYMBOLS) {
-                printf("Error: symbol table is full.\n");
-                exit(1);
+                report_error("symbol table is full");
+                return addr;
         }
 
         if (next_free_address >= RETURN_ADDR) {
-                printf("Error: no more space for symbols.\n");
-                exit(1);
+                report_error("no more space for symbols");
+                return addr;
         }
 
         strcpy(symbol_table[symbol_count].name, name);
@@ -134,8 +156,10 @@ int get_address(const char *name) {
                         return symbol_table[i].address;
                 }
         }
-        printf("Error: symbol '%s' not found.\n", name);
-        exit(1);
+        char buf[256];
+        snprintf(buf, 256, "symbol '%s' not found", name);
+        report_error(buf);
+        return 0;
 }
 
 int is_constant(const char *name) {
@@ -144,8 +168,10 @@ int is_constant(const char *name) {
                         return symbol_table[i].isConst;
                 }
         }
-        printf("Error: symbol '%s' not found.\n", name);
-        exit(1);
+        char buf[256];
+        snprintf(buf, 256, "symbol '%s' not found", name);
+        report_error(buf);
+        return 0;
 }
 
 void enter_scope() {
@@ -164,8 +190,10 @@ void leave_scope() {
 int add_function(const char *name, int has_return) {
         for (int i = 0; i < func_count; i++) {
                 if (strcmp(func_table[i].name, name) == 0) {
-                        printf("Error: function '%s' already defined.\n", name);
-                        exit(1);
+                        char buf[256];
+                        snprintf(buf, 256, "function '%s' already defined", name);
+                        report_error(buf);
+                        return i;
                 }
         }
         strcpy(func_table[func_count].name, name);
@@ -181,18 +209,33 @@ Function* get_function(const char *name) {
                         return &func_table[i];
                 }
         }
-        printf("Error: function '%s' not found.\n", name);
-        exit(1);
+        char buf[256];
+        snprintf(buf, 256, "function '%s' not found", name);
+        report_error(buf);
+        static Function dummy = { .name = "?", .instr_addr = 0, .num_params = 0, .has_return = 0 };
+        return &dummy;
 }
 
 int add_instruction(const char *instClear, const char *instCoded) {
         if (instr_count >= MAX_INSTR) {
-                printf("Error: program too large.\n");
-                exit(1);
+                report_error("program too large");
+                return instr_count - 1;
         }
         strcpy(program[instr_count].clear, instClear);
         strcpy(program[instr_count].coded, instCoded);
         return instr_count++;
+}
+
+/* NEW: patch a JMF placeholder once the jump target is known */
+static void backpatch_jmf(int idx, int cond_addr, int target) {
+    snprintf(program[idx].clear, 256, "JMF %d %d", cond_addr, target);
+    snprintf(program[idx].coded, 256, "%d %d %d", JMF, cond_addr, target);
+}
+
+/* NEW: patch a JMP placeholder once the jump target is known */
+static void backpatch_jmp(int idx, int target) {
+    snprintf(program[idx].clear, 256, "JMP %d", target);
+    snprintf(program[idx].coded, 256, "%d %d", JMP, target);
 }
 
 void flush_program() {
@@ -327,6 +370,7 @@ DECLARATION
 */
 declarations:
     | declarations declaration tSEMICOLON
+    | declarations error tSEMICOLON  { yyerrok; fprintf(stderr, "  -> recovered at ';' (declaration)\n"); }
 ;
 
 declaration: tINT id_list 
@@ -410,7 +454,10 @@ statement:
         assignment tSEMICOLON { reset_temp_zone(); }
         | print tSEMICOLON { reset_temp_zone(); }
         | while { reset_temp_zone(); }
+        | if_stmt { reset_temp_zone(); }          /* NEW */
         | func_call tSEMICOLON { reset_temp_zone(); }
+        | error tSEMICOLON { yyerrok; reset_temp_zone(); fprintf(stderr, "  -> recovered at ';' (statement)\n"); }
+        | error tRBRACE     { yyerrok; reset_temp_zone(); fprintf(stderr, "  -> recovered at '}' (block)\n"); }
         ;
 
 /*
@@ -418,11 +465,24 @@ ASSIGNMENTS
 */
 assignment: tID tASSIGN expr
         { 
-                int addr = get_address($1);
-
-                if (is_constant($1)) {
-                printf("Error: cannot assign to constant '%s'\n", $1);
-                exit(1);
+                int found = 0;
+                int addr = 0;
+                for (int i = symbol_count - 1; i >= 0; i--) {
+                        if (strcmp(symbol_table[i].name, $1) == 0) {
+                                found = 1;
+                                addr = symbol_table[i].address;
+                                if (symbol_table[i].isConst) {
+                                        char buf[256];
+                                        snprintf(buf, 256, "cannot assign to constant '%s'", $1);
+                                        report_error(buf);
+                                }
+                                break;
+                        }
+                }
+                if (!found) {
+                        char buf[256];
+                        snprintf(buf, 256, "symbol '%s' not found", $1);
+                        report_error(buf);
                 }
 
                 char bc[256], bd[256];
@@ -578,19 +638,83 @@ expr: expr tPLUS expr
         }
         ;  
 
-// ====================================
-//      WHILE CONDITION
-// ====================================
+/*
+IF / ELSE
+*/
+
+/* NEW: mid-rule action — fires right after the condition expr is reduced,
+   before the if-body is parsed. Emits the JMF placeholder and saves context. */
+if_cond:
+        {
+                if (if_sp >= MAX_NESTING) {
+                        report_error("if statements nested too deeply");
+                        /* push a dummy so the stack stays balanced */
+                }
+                int cond_addr = $<nb>-1;   /* the expr result sits just before us */
+                char bc[256], bd[256];
+                snprintf(bc, 256, "JMF %d ???", cond_addr);
+                snprintf(bd, 256, "%d %d ???", JMF, cond_addr);
+                int idx = add_instruction(bc, bd);
+
+                if_stack[if_sp].cond_addr = cond_addr;
+                if_stack[if_sp].jmf_index = idx;
+                if_stack[if_sp].jmp_index = -1;
+                if_stack[if_sp].has_else  = 0;
+                if_sp++;
+                reset_temp_zone();
+        }
+        ;
+
+if_stmt:
+        tIF tLPAREN expr tRPAREN if_cond tLBRACE statements tRBRACE else_part
+        {
+                --if_sp;
+                IfCtx *ctx = &if_stack[if_sp];
+
+                if (ctx->has_else) {
+                        /* JMF skips to just after the JMP-over-else */
+                        backpatch_jmf(ctx->jmf_index, ctx->cond_addr,
+                                      ctx->jmp_index + 1);
+                        /* JMP skips over the else body to current instr */
+                        backpatch_jmp(ctx->jmp_index, instr_count);
+                } else {
+                        /* No else: JMF jumps straight past the if body */
+                        backpatch_jmf(ctx->jmf_index, ctx->cond_addr,
+                                      instr_count);
+                }
+                reset_temp_zone();
+        }
+        ;
+
+else_part:
+        /* empty — no else branch */
+        | tELSE
+        {
+                /* Emit a JMP placeholder to skip over the else body.
+                   Record its index so the closing action can backpatch it.
+                   We use if_sp-1 because if_sp was already incremented. */
+                IfCtx *ctx = &if_stack[if_sp - 1];
+                char bc[256], bd[256];
+                snprintf(bc, 256, "JMP ???");
+                snprintf(bd, 256, "%d ???", JMP);
+                ctx->jmp_index = add_instruction(bc, bd);
+                ctx->has_else  = 1;
+                reset_temp_zone();
+        }
+        tLBRACE statements tRBRACE
+        ;
+
+/*
+WHILE CONDITION 
+*/
 while: tWHILE while_start tLPAREN expr tRPAREN while_cond tLBRACE statements tRBRACE 
         {
-                // Put a JMP instruction at the end to jump back to the beginning of while
                 WhileCtx ctx = while_stack[--while_sp];
                 char bc[256], bd[256];
                 snprintf(bc, 256, "JMP %d", ctx.loop_start);
                 snprintf(bd, 256, "%d %d", JMP, ctx.loop_start);
                 add_instruction(bc, bd);
                 
-                // Replace the ??? with the next instruction after while condition
                 snprintf(program[ctx.jmf_index].clear, 256, "JMF %d %d", ctx.cond_addr, instr_count);
                 snprintf(program[ctx.jmf_index].coded, 256, "%d %d %d", JMF, ctx.cond_addr, instr_count);
         }
@@ -645,9 +769,10 @@ func_call: tID tLPAREN
                 Function *f = get_function($1);
 
                 if (frame->count != f->num_params) {
-                        printf("Error: function '%s' expects %d args, got %d.\n",
-                               $1, f->num_params, frame->count);
-                        exit(1);
+                        char buf[256];
+                        snprintf(buf, 256, "function '%s' expects %d args, got %d",
+                                 $1, f->num_params, frame->count);
+                        report_error(buf);
                 }
 
                 char bc[256], bd[256];
@@ -689,7 +814,8 @@ arg_list_items:
 
 %%
 void yyerror(const char *s) {
-        fprintf(stderr, "%s\n", s);
+        fprintf(stderr, "Syntax error at line %d: %s\n", yylineno, s);
+        nb_errors++;
 }
 
 int main(void) {
@@ -702,12 +828,18 @@ int main(void) {
         }
 
         yyparse();
-        printf("Parsing finished\n");
 
+        if (nb_errors > 0) {
+                fprintf(stderr, "\nCompilation failed: %d error(s) detected.\n", nb_errors);
+                fclose(clear);
+                fclose(coded);
+                return 1;
+        }
+
+        printf("Parsing finished successfully.\n");
         flush_program();
 
         fclose(clear);
         fclose(coded);
         return 0;
 }
-

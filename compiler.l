@@ -5,6 +5,7 @@
 %}
 
 %option noyywrap
+%option yylineno
 
 digit   [0-9]
 letter  [A-Za-z]
@@ -52,5 +53,5 @@ letter  [A-Za-z]
 [ \t]+	    {}
 \n          {}
 
-.           { return tERROR; }
+.           { fprintf(stderr, "Lexical error at line %d: unexpected character '%s'\n", yylineno, yytext); return tERROR; }
 %%
