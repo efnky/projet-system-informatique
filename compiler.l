@@ -5,6 +5,7 @@
 %}
 
 %option noyywrap
+%option yylineno
 
 digit   [0-9]
 letter  [A-Za-z]
@@ -23,6 +24,8 @@ letter  [A-Za-z]
 "if"        { return tIF; }
 "else"      { return tELSE; }
 "while"     { return tWHILE; }
+"return"    { return tRETURN; }
+"void"      { return tVOID; }
 
 {digit}+    { yylval.nb = atoi(yytext); return INTEGER;}
 {letter}({letter}|{digit}|_)*   {
@@ -42,11 +45,13 @@ letter  [A-Za-z]
 "!="        { return tNEQ; }
 
 
+"&"         { return tAMPERSAND; }
+
 ";"         { return tSEMICOLON; }
 ","         { return tCOMMA; }
 
 [ \t]+	    {}
 \n          {}
 
-.           { return tERROR; }
+.           { fprintf(stderr, "Lexical error at line %d: unexpected character '%s'\n", yylineno, yytext); return tERROR; }
 %%
