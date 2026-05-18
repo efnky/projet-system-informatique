@@ -14,8 +14,13 @@
 #define SUP 0xA
 #define EQU 0xB
 #define PRI 0xC
+#define LIND 0xD
+#define SIND 0xE
+#define CALL_OP 0xF
+#define RET_OP 0x10
 
 #define MAX_INSTR 10000
+#define MAX_CALL_STACK 256
 
 typedef struct {
     int op;
@@ -28,6 +33,9 @@ FILE* yyin;
 int mem[1000] = {0};
 Instruction prog[MAX_INSTR];
 int prog_size = 0;
+
+int call_stack[MAX_CALL_STACK];
+int call_sp = 0;
 
 void run_program(void);
 int yylex(void);
@@ -70,6 +78,12 @@ program_line: INTEGER INTEGER INTEGER INTEGER
         prog[prog_size].nargs   = 1;
         prog_size++;
     }
+    | INTEGER
+    {
+        prog[prog_size].op      = $1;
+        prog[prog_size].nargs   = 0;
+        prog_size++;
+    }
     ;
 
 %%
@@ -108,6 +122,25 @@ void run_program(void) {
                     pc = ins.args[1];
                 else
                     pc++;
+                break;
+
+            case LIND: mem[ins.args[0]] = mem[mem[ins.args[1]]]; pc++; break;
+            case SIND: mem[mem[ins.args[0]]] = mem[ins.args[1]]; pc++; break;
+
+            case CALL_OP:
+                if (call_sp >= MAX_CALL_STACK) {
+                    printf("Error: call stack overflow\n");
+                    exit(1);
+                }
+                call_stack[call_sp++] = pc + 1;
+                pc = ins.args[0];
+                break;
+            case RET_OP:
+                if (call_sp <= 0) {
+                    printf("Error: call stack underflow\n");
+                    exit(1);
+                }
+                pc = call_stack[--call_sp];
                 break;
 
             default:
