@@ -189,20 +189,6 @@ int get_address(const char *name) {
         return 0;
 }
 
-// check the symbol if it is a constant from the stack of symbols
-int is_constant(const char *name) {
-        for (int i = symbol_count - 1; i >= 0; i--) {
-                if (strcmp(symbol_table[i].name, name) == 0) {
-                        return symbol_table[i].isConst;
-                }
-        }
-
-        char buf[256];
-        snprintf(buf, 256, "symbol '%s' not found", name);
-        report_error(buf);
-        return 0;
-}
-
 // increment the scope when the symbols are created inside a function
 void enter_scope() {
         current_scope++;
