@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+// basic operations (codes)
 #define ADD 1
 #define MUL 2
 #define SOU 3
@@ -15,50 +16,67 @@
 #define SUP 0xA
 #define EQU 0xB
 #define PRI 0xC
-#define LIND 0xD
-#define SIND 0xE
+
+// indirect load and store 
+#define LOADI 0xD
+#define STOREI 0xE
+
+// save the return address, then jump to the function
 #define CALL_OP 0xF
+
+// return to the saved address
 #define RET_OP 0x10
 
 #define MAX_SYMBOLS 200
-#define TEMP_BASE 150
-
 #define MAX_INSTR 10000
-
 #define MAX_NESTING 32
 #define MAX_FUNCTIONS 50
 #define MAX_PARAMS 10
 #define MAX_ARGS 10
 
+// start point of the temporary addresses
+#define TEMP_BASE 150
+
+// return value from a function
 #define RETURN_ADDR 149
 
+// Symbol table
 typedef struct {
         char name[50];
         int address;
         int isConst;
         int isPointer;
-        int scope;
+        int scope;   // depth
 } Symbol;
 
+// Instruction table
 typedef struct {
-    char clear[256];
-    char coded[256];
+    char clear[256]; // clear instruction, human-friendly visual (ex. ADD 105 0 1)
+    char coded[256]; // coded instruction, machine-friendly (ex. 1 105 0 1)
 } Instr;
 
+// While Stack
 typedef struct {
-    int loop_start;
-    int jmf_index;
-    int cond_addr;
-} WhileCtx;
+    int loop_start; // the beginning of the loop, where we jump
+    int jmf_index; // where to jump after the end of the loop
+    int cond_addr; // condition of the while loop
+} WhileControl;
 
-/* NEW: if/else context */
+WhileControl while_stack[MAX_NESTING];
+int      while_sp = 0;
+
+// If/else Stack 
 typedef struct {
     int jmf_index;
     int jmp_index;
     int cond_addr;
     int has_else;
-} IfCtx;
+} IfControl;
 
+IfControl if_stack[MAX_NESTING];
+int   if_sp = 0;
+
+// Function Stack
 typedef struct {
     char name[50];
     int instr_addr;
@@ -67,26 +85,10 @@ typedef struct {
     int has_return;
 } Function;
 
-int symbol_count = 0;
-int next_free_address = 0;
-int temp_next_address = TEMP_BASE;
-Symbol symbol_table[MAX_SYMBOLS];
-
-Instr program[MAX_INSTR];
-int   instr_count = 0;
-
-WhileCtx while_stack[MAX_NESTING];
-int      while_sp = 0;
-
-/* NEW: if stack */
-IfCtx if_stack[MAX_NESTING];
-int   if_sp = 0;
-
 Function func_table[MAX_FUNCTIONS];
 int func_count = 0;
 
-int current_scope = 0;
-
+// List of arguments of a function
 typedef struct {
     int args[MAX_ARGS];
     int count;
@@ -95,20 +97,38 @@ typedef struct {
 ArgFrame arg_stack[MAX_NESTING];
 int arg_sp = 0;
 
+// available addresses and informations on symbols
+int symbol_count = 0;
+int next_free_address = 0;
+int temp_next_address = TEMP_BASE;
+Symbol symbol_table[MAX_SYMBOLS];
+
+// current scope of a symbol
+int current_scope = 0;
+
+// Create a list of instructions
+Instr program[MAX_INSTR];
+int   instr_count = 0;
+
 FILE *clear;
 FILE *coded;
 
+// Error
 extern int yylineno;
 int nb_errors = 0;
 
+// Print the message after detecting an error
 void report_error(const char *msg) {
         fprintf(stderr, "Semantic error at line %d: %s\n", yylineno, msg);
         nb_errors++;
 }
 
+// Add new symbol to the list
 int add_symbol(const char *name, int isConst, int isPointer) {
         int addr = next_free_address;
         for (int i = 0; i < symbol_count; i++) {
+
+                // check if there is another symbol with the same name
                 if (strcmp(symbol_table[i].name, name) == 0
                     && symbol_table[i].scope == current_scope) {
                         char buf[256];
@@ -118,16 +138,19 @@ int add_symbol(const char *name, int isConst, int isPointer) {
                 }
         }
 
+        // check if the there is enough place in the symbol table to put the new symbol
         if (symbol_count >= MAX_SYMBOLS) {
                 report_error("symbol table is full");
                 return addr;
         }
 
+        // check if the next open address is in the usable address zone ([0-148])
         if (next_free_address >= RETURN_ADDR) {
                 report_error("no more space for symbols");
                 return addr;
         }
 
+        // add the new symbol to the symbol_table
         strcpy(symbol_table[symbol_count].name, name);
         symbol_table[symbol_count].address = next_free_address;
         symbol_table[symbol_count].isConst = isConst;
@@ -140,44 +163,52 @@ int add_symbol(const char *name, int isConst, int isPointer) {
         return addr;
 }
 
+// pass to the next temporary address
 int new_temp() {
     int addr = temp_next_address;
     temp_next_address++;
     return addr;
 }
 
+// reset the temporay address index to the start
 void reset_temp_zone() {
     temp_next_address = TEMP_BASE;
 }
 
+// Starting from the top of the stack, search the address of the symbol
 int get_address(const char *name) {
         for (int i = symbol_count - 1; i >= 0; i--) {
                 if (strcmp(symbol_table[i].name, name) == 0) {
                         return symbol_table[i].address;
                 }
         }
+
         char buf[256];
         snprintf(buf, 256, "symbol '%s' not found", name);
         report_error(buf);
         return 0;
 }
 
+// check the symbol if it is a constant from the stack of symbols
 int is_constant(const char *name) {
         for (int i = symbol_count - 1; i >= 0; i--) {
                 if (strcmp(symbol_table[i].name, name) == 0) {
                         return symbol_table[i].isConst;
                 }
         }
+
         char buf[256];
         snprintf(buf, 256, "symbol '%s' not found", name);
         report_error(buf);
         return 0;
 }
 
+// increment the scope when the symbols are created inside a function
 void enter_scope() {
         current_scope++;
 }
 
+// pop off the symbols after the end of a function
 void leave_scope() {
         int i = symbol_count - 1;
         while (i >= 0 && symbol_table[i].scope == current_scope) {
@@ -187,7 +218,10 @@ void leave_scope() {
         current_scope--;
 }
 
+// add new function inside the function stack
 int add_function(const char *name, int has_return) {
+
+        // check for another function with the same name
         for (int i = 0; i < func_count; i++) {
                 if (strcmp(func_table[i].name, name) == 0) {
                         char buf[256];
@@ -196,6 +230,7 @@ int add_function(const char *name, int has_return) {
                         return i;
                 }
         }
+
         strcpy(func_table[func_count].name, name);
         func_table[func_count].instr_addr = -1;
         func_table[func_count].num_params = 0;
@@ -203,6 +238,7 @@ int add_function(const char *name, int has_return) {
         return func_count++;
 }
 
+// get function from the function stack using its name
 Function* get_function(const char *name) {
         for (int i = 0; i < func_count; i++) {
                 if (strcmp(func_table[i].name, name) == 0) {
@@ -216,6 +252,7 @@ Function* get_function(const char *name) {
         return &dummy;
 }
 
+// add instructions to the instructions stack
 int add_instruction(const char *instClear, const char *instCoded) {
         if (instr_count >= MAX_INSTR) {
                 report_error("program too large");
@@ -226,18 +263,20 @@ int add_instruction(const char *instClear, const char *instCoded) {
         return instr_count++;
 }
 
-/* NEW: patch a JMF placeholder once the jump target is known */
+
+// JMF to the instruction when the jump target is known
 static void backpatch_jmf(int idx, int cond_addr, int target) {
     snprintf(program[idx].clear, 256, "JMF %d %d", cond_addr, target);
     snprintf(program[idx].coded, 256, "%d %d %d", JMF, cond_addr, target);
 }
 
-/* NEW: patch a JMP placeholder once the jump target is known */
+// JMP to the instruction when the jump target is known
 static void backpatch_jmp(int idx, int target) {
     snprintf(program[idx].clear, 256, "JMP %d", target);
     snprintf(program[idx].coded, 256, "%d %d", JMP, target);
 }
 
+// write all the programs inside a file
 void flush_program() {
         for (int i = 0; i < instr_count; i++) {
                 fprintf(clear, "%s\n", program[i].clear);
@@ -262,12 +301,17 @@ void yyerror(const char *s);
 
 %left tLT tGT tEQEQ tNEQ
 %left tPLUS tMINUS
+
+// 
 %left tMUL tDIV
 %right UDEREF UADDR
 
 %type <nb> expr func_call
 
 %%
+
+
+
 /*
 PROGRAM: function definitions then main
 */
@@ -275,30 +319,34 @@ program:
     func_defs tMAIN tLPAREN tRPAREN tLBRACE declarations statements tRBRACE
 ;
 
-func_defs:
-    | func_defs func_def
-;
 
 /*
 FUNCTION DEFINITIONS
 */
+func_defs:
+    | func_defs func_def
+;
+
 func_def:
+
+        // Add the info of the new created function to the function stack
     tINT tID tLPAREN
         {
                 int idx = add_function($2, 1);
                 char bc[256], bd[256];
-                snprintf(bc, 256, "JMP ???");
+                snprintf(bc, 256, "JMP ???"); // unknown destination to jump
                 snprintf(bd, 256, "%d ???", JMP);
                 int jmp_idx = add_instruction(bc, bd);
                 func_table[idx].instr_addr = jmp_idx;
                 enter_scope();
         }
-    param_list tRPAREN tLBRACE declarations statements return_stmt tSEMICOLON tRBRACE
+        // Check the parameters and put them inside the parameter list
+    param_list tRPAREN tLBRACE declarations statements func_return tSEMICOLON tRBRACE
         {
                 leave_scope();
                 Function *f = get_function($2);
                 int jmp_over = f->instr_addr;
-                snprintf(program[jmp_over].clear, 256, "JMP %d", instr_count);
+                snprintf(program[jmp_over].clear, 256, "JMP %d", instr_count); // backpatch
                 snprintf(program[jmp_over].coded, 256, "%d %d", JMP, instr_count);
                 f->instr_addr = jmp_over + 1;
                 printf("Function '%s' defined (%d params)\n", $2, f->num_params);
@@ -313,10 +361,11 @@ func_def:
                 func_table[idx].instr_addr = jmp_idx;
                 enter_scope();
         }
+        // void functions don't return anything, so we pass directly to the next instruction
     param_list tRPAREN tLBRACE declarations statements tRBRACE
         {
                 char bc[256], bd[256];
-                snprintf(bc, 256, "RET");
+                snprintf(bc, 256, "RET"); // end of a function
                 snprintf(bd, 256, "%d", RET_OP);
                 add_instruction(bc, bd);
 
@@ -330,6 +379,9 @@ func_def:
         }
 ;
 
+/*
+PARAMETER LIST
+*/
 param_list:
     | param_list_items
 ;
@@ -339,19 +391,20 @@ param_list_items:
         {
                 int addr = add_symbol($2, 0, 0);
                 Function *f = &func_table[func_count - 1];
-                f->param_addrs[f->num_params] = addr;
+                f->param_addrs[f->num_params] = addr; // get the parameters for that function
                 f->num_params++;
         }
     | param_list_items tCOMMA tINT tID
         {
                 int addr = add_symbol($4, 0, 0);
                 Function *f = &func_table[func_count - 1];
-                f->param_addrs[f->num_params] = addr;
+                f->param_addrs[f->num_params] = addr; 
                 f->num_params++;
         }
 ;
 
-return_stmt:
+// return the integer obtained after an int function
+func_return:
     tRETURN expr
         {
                 char bc[256], bd[256];
@@ -365,27 +418,29 @@ return_stmt:
         }
 ;
 
+
+
 /*
 DECLARATION
 */
 declarations:
     | declarations declaration tSEMICOLON
-    | declarations error tSEMICOLON  { yyerrok; fprintf(stderr, "  -> recovered at ';' (declaration)\n"); }
+    | declarations error tSEMICOLON  { yyerrok; fprintf(stderr, "  -> recovered at ';' (declaration)\n"); } // return an error if a declaration missed ";"
 ;
 
 declaration: tINT id_list 
         {
-                printf("declaring an integer.\n");
+                printf("declaring an integer.\n"); // debug
                 reset_temp_zone();
         }
         | tINT ptr_list
         {
-                printf("declaring a pointer.\n");
+                printf("declaring a pointer.\n"); // debug
                 reset_temp_zone();
         }
         | tCONST tINT const_list 
         {
-                printf("declaring a constant integer.\n");
+                printf("declaring a constant integer.\n"); // debug
                 reset_temp_zone();
         }
         ;
@@ -409,6 +464,9 @@ decl_item: tID
         }
         ;
 
+/*
+POINTERS
+*/
 ptr_list: ptr_decl_item
         | ptr_list tCOMMA ptr_decl_item
         ;
@@ -416,7 +474,7 @@ ptr_list: ptr_decl_item
 ptr_decl_item: tMUL tID
         {
                 int addr = add_symbol($2, 0, 1);
-                printf("Pointer %s declared at address %d\n", $2, addr);
+                printf("Pointer %s declared at address %d\n", $2, addr); // debug
         }
         | tMUL tID tASSIGN expr
         {
@@ -425,10 +483,14 @@ ptr_decl_item: tMUL tID
                 snprintf(bc, 256, "COP %d %d", addr, $4);
                 snprintf(bd, 256, "%d %d %d", COP, addr, $4);
                 add_instruction(bc, bd);
-                printf("Pointer %s declared and initialized at address %d\n", $2, addr);
+                printf("Pointer %s declared and initialized at address %d\n", $2, addr); // debug
         }
         ;
 
+
+/*
+CONSTANTS
+*/
 const_list: decl_item_const 
         | const_list tCOMMA decl_item_const
         ;
@@ -454,10 +516,10 @@ statement:
         assignment tSEMICOLON { reset_temp_zone(); }
         | print tSEMICOLON { reset_temp_zone(); }
         | while { reset_temp_zone(); }
-        | if_stmt { reset_temp_zone(); }          /* NEW */
+        | if_state { reset_temp_zone(); }    
         | func_call tSEMICOLON { reset_temp_zone(); }
         | error tSEMICOLON { yyerrok; reset_temp_zone(); fprintf(stderr, "  -> recovered at ';' (statement)\n"); }
-        | error tRBRACE     { yyerrok; reset_temp_zone(); fprintf(stderr, "  -> recovered at '}' (block)\n"); }
+        | error tRBRACE    { yyerrok; reset_temp_zone(); fprintf(stderr, "  -> recovered at '}' (block)\n"); }
         ;
 
 /*
@@ -468,9 +530,13 @@ assignment: tID tASSIGN expr
                 int found = 0;
                 int addr = 0;
                 for (int i = symbol_count - 1; i >= 0; i--) {
+
+                        // find the symbol in the table
                         if (strcmp(symbol_table[i].name, $1) == 0) {
                                 found = 1;
                                 addr = symbol_table[i].address;
+
+                                // check if the symbol is a constant
                                 if (symbol_table[i].isConst) {
                                         char buf[256];
                                         snprintf(buf, 256, "cannot assign to constant '%s'", $1);
@@ -479,6 +545,8 @@ assignment: tID tASSIGN expr
                                 break;
                         }
                 }
+
+                // error if we cannot find the symbol
                 if (!found) {
                         char buf[256];
                         snprintf(buf, 256, "symbol '%s' not found", $1);
@@ -491,20 +559,22 @@ assignment: tID tASSIGN expr
                 add_instruction(bc, bd);
                 printf("Assigned expression result to %s at address %d\n", $1, addr);
         }
+        // pointer dereference
         | tMUL tID tASSIGN expr
         {
                 int ptr_addr = get_address($2);
                 char bc[256], bd[256];
-                snprintf(bc, 256, "SIND %d %d", ptr_addr, $4);
-                snprintf(bd, 256, "%d %d %d", SIND, ptr_addr, $4);
+                snprintf(bc, 256, "STOREI %d %d", ptr_addr, $4); // store the value expr into the pointer address
+                snprintf(bd, 256, "%d %d %d", STOREI, ptr_addr, $4);
                 add_instruction(bc, bd);
                 printf("Dereference write through %s\n", $2);
         }
         ;
 
-// ====================================
-//             EXPRESSIONS
-// ====================================
+
+/*
+EXPRESSIONS
+*/
 expr: expr tPLUS expr   
         { 
                 int res = new_temp();
@@ -575,6 +645,7 @@ expr: expr tPLUS expr
                 $$ = res;
                 printf("Compared values with equal to.\n");
         }
+        // not equal
         | expr tNEQ expr
         {
                 int res = new_temp();
@@ -582,6 +653,7 @@ expr: expr tPLUS expr
                 int tmp2 = new_temp();
                 char bc[256], bd[256];
 
+                // put a verifier 1 to a temporary address
                 snprintf(bc, 256, "AFC %d 1", tmp1);
                 snprintf(bd, 256, "%d %d 1", AFC, tmp1);
                 add_instruction(bc, bd);
@@ -590,6 +662,7 @@ expr: expr tPLUS expr
                 snprintf(bd, 256, "%d %d %d %d", EQU, tmp2, $1, $3);
                 add_instruction(bc, bd);
 
+                // check if the result of EQU and invert it
                 snprintf(bc, 256, "SOU %d %d %d", res, tmp1, tmp2);
                 snprintf(bd, 256, "%d %d %d %d", SOU, res, tmp1, tmp2);
                 add_instruction(bc, bd);
@@ -606,6 +679,7 @@ expr: expr tPLUS expr
                 add_instruction(bc, bd);
                 $$ = temp;
         }
+        // address of a pointer, %prec is to assigns unary address-of precedence
         | tAMPERSAND tID %prec UADDR 
         {
                 int addr = get_address($2);
@@ -622,8 +696,8 @@ expr: expr tPLUS expr
                 int ptr_addr = get_address($2);
                 int temp = new_temp();
                 char bc[256], bd[256];
-                snprintf(bc, 256, "LIND %d %d", temp, ptr_addr);
-                snprintf(bd, 256, "%d %d %d", LIND, temp, ptr_addr);
+                snprintf(bc, 256,  "LOADI %d %d", temp, ptr_addr);
+                snprintf(bd, 256, "%d %d %d", LOADI, temp, ptr_addr);
                 add_instruction(bc, bd);
                 $$ = temp;
                 printf("Dereference read of %s\n", $2);
@@ -641,16 +715,12 @@ expr: expr tPLUS expr
 /*
 IF / ELSE
 */
-
-/* NEW: mid-rule action — fires right after the condition expr is reduced,
-   before the if-body is parsed. Emits the JMF placeholder and saves context. */
 if_cond:
         {
                 if (if_sp >= MAX_NESTING) {
                         report_error("if statements nested too deeply");
-                        /* push a dummy so the stack stays balanced */
                 }
-                int cond_addr = $<nb>-1;   /* the expr result sits just before us */
+                int cond_addr = $<nb>-1;   // the expr result sits just before us 
                 char bc[256], bd[256];
                 snprintf(bc, 256, "JMF %d ???", cond_addr);
                 snprintf(bd, 256, "%d %d ???", JMF, cond_addr);
@@ -665,20 +735,20 @@ if_cond:
         }
         ;
 
-if_stmt:
+if_state:
         tIF tLPAREN expr tRPAREN if_cond tLBRACE statements tRBRACE else_part
         {
                 --if_sp;
-                IfCtx *ctx = &if_stack[if_sp];
+                IfControl *ctx = &if_stack[if_sp];
 
                 if (ctx->has_else) {
-                        /* JMF skips to just after the JMP-over-else */
+                        // JMF skips to just after the JMP-over-else 
                         backpatch_jmf(ctx->jmf_index, ctx->cond_addr,
                                       ctx->jmp_index + 1);
-                        /* JMP skips over the else body to current instr */
+                        // JMP skips over the else body to current instr
                         backpatch_jmp(ctx->jmp_index, instr_count);
                 } else {
-                        /* No else: JMF jumps straight past the if body */
+                        // No else: JMF jumps straight past the if body 
                         backpatch_jmf(ctx->jmf_index, ctx->cond_addr,
                                       instr_count);
                 }
@@ -687,13 +757,13 @@ if_stmt:
         ;
 
 else_part:
-        /* empty — no else branch */
         | tELSE
         {
-                /* Emit a JMP placeholder to skip over the else body.
-                   Record its index so the closing action can backpatch it.
-                   We use if_sp-1 because if_sp was already incremented. */
-                IfCtx *ctx = &if_stack[if_sp - 1];
+                // Emit a JMP placeholder to skip over the else body.
+                // Record its index so the closing action can backpatch it.
+                // We use if_sp-1 because if_sp was already incremented. 
+
+                IfControl *ctx = &if_stack[if_sp - 1];
                 char bc[256], bd[256];
                 snprintf(bc, 256, "JMP ???");
                 snprintf(bd, 256, "%d ???", JMP);
@@ -709,12 +779,13 @@ WHILE CONDITION
 */
 while: tWHILE while_start tLPAREN expr tRPAREN while_cond tLBRACE statements tRBRACE 
         {
-                WhileCtx ctx = while_stack[--while_sp];
+                WhileControl ctx = while_stack[--while_sp];
                 char bc[256], bd[256];
                 snprintf(bc, 256, "JMP %d", ctx.loop_start);
                 snprintf(bd, 256, "%d %d", JMP, ctx.loop_start);
                 add_instruction(bc, bd);
                 
+                // Replace the "???" with instr_count
                 snprintf(program[ctx.jmf_index].clear, 256, "JMF %d %d", ctx.cond_addr, instr_count);
                 snprintf(program[ctx.jmf_index].coded, 256, "%d %d %d", JMF, ctx.cond_addr, instr_count);
         }
@@ -762,12 +833,13 @@ func_call: tID tLPAREN
                 arg_stack[arg_sp].count = 0;
                 arg_sp++;
         }
-    arg_list tRPAREN
+        arg_list tRPAREN
         {
                 arg_sp--;
                 ArgFrame *frame = &arg_stack[arg_sp];
                 Function *f = get_function($1);
 
+                // check if the number of parameters passes the limit
                 if (frame->count != f->num_params) {
                         char buf[256];
                         snprintf(buf, 256, "function '%s' expects %d args, got %d",
